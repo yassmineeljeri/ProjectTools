@@ -1,0 +1,770 @@
+global:
+  clusterLabel: cluster
+  license:
+    key: ""
+    keyRef: {}
+  cluster:
+    dnsDomain: cluster.local.
+
+nameOverride: ""
+fullnameOverride: ""
+tenant: "0"
+argocdReleaseOverride: ""
+
+# VictoriaMetrics Operator - DISABLED: Will be installed separately
+victoria-metrics-operator:
+  enabled: true  # Disabled - operator installed separately
+  crds:
+    plain: true
+    cleanup:
+      enabled: false  # Disable cleanup to avoid conflicts
+      image:
+        repository: bitnami/kubectl
+        pullPolicy: IfNotPresent
+  serviceMonitor:
+    enabled: true
+  operator:
+    disable_prometheus_converter: false
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+
+defaultDashboards:
+  enabled: true
+  defaultTimezone: utc
+  labels: {}
+  annotations: {}
+  grafanaOperator:
+    enabled: false
+    spec:
+      instanceSelector:
+        matchLabels:
+          dashboards: grafana
+      allowCrossNamespaceImport: false
+  dashboards:
+    victoriametrics-vmalert:
+      enabled: true
+    victoriametrics-operator:
+      enabled: true
+    node-exporter-full:
+      enabled: true
+
+# Default rules - AKS optimized
+defaultRules:
+  additionalGroupByLabels: []
+  create: true
+  group:
+    spec:
+      params: {}
+      interval: 60s
+  rule:
+    spec:
+      labels: {}
+      annotations: {}
+  alerting:
+    spec:
+      labels: {}
+      annotations: {}
+  recording:
+    spec:
+      labels: {}
+      annotations: {}
+  rules: {}
+  groups:
+    # Disable AKS-incompatible components
+    etcd:
+      create: false
+    kubeControllerManager:
+      create: false
+    kubeScheduler:
+      create: false
+    kubeApiserver:
+      create: false
+    kubelet:
+      create: false
+    kubernetesApps:
+      create: false
+    kubernetesSystem:
+      create: false
+    kubeApiserverBurnrate:
+      create: false
+    kubeApiserverAvailability:
+      create: true
+    kubeApiserverHistogram:
+      create: true
+    kubeApiserverSlos:
+      create: true
+
+    # garder uniquement les règles utiles :
+    general:
+      create: true
+    k8sContainerCpuUsageSecondsTotal:
+      create: true
+    k8sContainerMemoryWorkingSetBytes:
+      create: true
+    k8sContainerResource:
+      create: true
+    kubernetesResources:
+      create: true
+    kubeStateMetrics:
+      create: true
+    node:
+      create: true
+    nodeNetwork:
+      create: true
+    vmagent:
+      create: true
+    vmcluster:
+      create: true
+    vmHealth:
+      create: true
+    alertmanager:
+      create: true
+  runbookUrl: https://runbooks.prometheus-operator.dev/runbooks
+  labels: {}
+  annotations: {}
+
+additionalVictoriaMetricsMap: {}
+
+external:
+  grafana:
+    host: "grafanadashboard.devops-tool.com"
+    datasource: VictoriaMetrics
+  vm:
+    read:
+      url: ""
+    write:
+      url: ""
+
+# VMSingle - Disabled
+vmsingle:
+  enabled: false
+
+# VMCluster - Resource optimized
+vmcluster:
+  enabled: true
+  labels: {}
+  annotations: {}
+  spec:
+    retentionPeriod: "3"
+    replicationFactor: 1
+
+    vmstorage:
+      replicaCount: 1
+      storageDataPath: /vm-data
+      storage:
+        volumeClaimTemplate:
+          spec:
+            resources:
+              requests:
+                storage: 20Gi
+      resources:
+        limits:
+          cpu: "1"
+          memory: "2Gi"
+        requests:
+          cpu: "200m"
+          memory: "512Mi"
+      extraArgs:
+        dedup.minScrapeInterval: "60s"
+        search.maxUniqueTimeseries: "200000"
+
+    vmselect:
+      enabled: true
+      port: "8481"
+      replicaCount: 1
+      storage:
+        volumeClaimTemplate:
+          spec:
+            resources:
+              requests:
+                storage: 5Gi
+      resources:
+        limits:
+          cpu: "800m"
+          memory: "1Gi"
+        requests:
+          cpu: "100m"
+          memory: "256Mi"
+      extraArgs:
+        search.maxQueryDuration: "60s"
+        search.maxPointsPerTimeseries: "500000"
+        search.maxSamplesPerSeries: "500000"
+        search.maxSeries: "50000"
+
+    vminsert:
+      enabled: true
+      port: "8480"
+      replicaCount: 1
+      resources:
+        limits:
+          cpu: "800m"
+          memory: "1Gi"
+        requests:
+          cpu: "100m"
+          memory: "256Mi"
+      extraArgs:
+        maxLabelsPerTimeseries: "60"
+        maxLabelValueLen: "300"
+
+  ingress:
+    storage:
+      enabled: false
+    select:
+      enabled: true
+      annotations:
+        kubernetes.io/ingress.class: nginx
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/limit-rps: "100"
+        nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+      labels: {}
+      ingressClassName: nginx
+      pathType: Prefix
+      path: /
+      hosts:
+        - vmselect.devops-tool.com
+      extraPaths: []
+      tls:
+        - secretName: victoriametrics-ingress-tls
+          hosts:
+            - vmselect.devops-tool.com
+    insert:
+      enabled: true
+      annotations:
+        kubernetes.io/ingress.class: nginx
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/limit-rps: "1000"
+        nginx.ingress.kubernetes.io/proxy-body-size: "32m"
+        nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+      labels: {}
+      ingressClassName: nginx
+      pathType: Prefix
+      path: /
+      hosts:
+        - vminsert.devops-tool.com
+      extraPaths: []
+      tls:
+        - secretName: victoriametrics-ingress-tls
+          hosts:
+            - vminsert.devops-tool.com
+
+# VMAlertmanager - Resource optimized - FIXED CONFIGURATION
+alertmanager:
+  enabled: true
+  labels: {}
+  annotations: {}
+  spec:
+    replicaCount: 1
+    port: "9093"
+    selectAllByDefault: true
+    image:
+      tag: v0.28.1
+    externalURL: "https://alertmanager.devops-tool.com"
+    routePrefix: /
+    resources:
+      limits:
+        cpu: "200m"
+        memory: "256Mi"
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+    securityContext:
+      runAsUser: 65534
+      runAsGroup: 65534
+      fsGroup: 65534
+    retention: "72h"
+    storage:
+      volumeClaimTemplate:
+        spec:
+          resources:
+            requests:
+              storage: 2Gi
+
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      receiver: "slack-default"
+      group_by: ["alertgroup", "cluster", "job", "namespace"]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        - matchers:
+            - severity="critical"
+          receiver: slack-critical
+          continue: true
+          group_wait: 10s
+          group_interval: 2m
+          repeat_interval: 1h
+        - matchers:
+            - severity="warning"
+          receiver: slack-warning
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 2h
+          continue: true
+        - matchers:
+            - severity="info"
+          receiver: "slack-info"
+          group_wait: 1m
+          group_interval: 10m
+          repeat_interval: 12h
+
+    inhibit_rules:
+      - target_matchers:
+          - severity=warning
+        source_matchers:
+          - severity=critical
+        equal:
+          - cluster
+          - namespace
+          - alertname
+      - target_matchers:
+          - severity=info
+        source_matchers:
+          - severity=warning
+        equal:
+          - cluster
+          - namespace
+          - alertname
+
+    receivers:
+      - name: "slack-default"
+        slack_configs:
+          - channel: "#alerts-default"
+            send_resolved: true
+            api_url: "https://hooks.slack.com/services/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"
+            title: >
+              [{{ (index .Alerts 0).Labels.cluster | toUpper }}] ❓ DEFAULT - {{ (index .Alerts 0).Labels.alertname }}
+            text: |
+              *Description:* {{ (index .Alerts 0).Annotations.description }}
+              *Namespace:* {{ (index .Alerts 0).Labels.namespace }}
+              *Pod:* {{ (index .Alerts 0).Labels.pod }}
+              *Node:* {{ (index .Alerts 0).Labels.node }}
+            actions:
+              - type: button
+                text: "Runbook 📗"
+                url: "{{ (index .Alerts 0).Annotations.runbook_url }}"
+              - type: button
+                text: "Query 🔍"
+                url: "{{ (index .Alerts 0).GeneratorURL }}"
+              - type: button
+                text: "Dashboard 📊"
+                url: "{{ (index .Alerts 0).Annotations.dashboard }}"
+              - type: button
+                text: "Silence 🔕"
+                url: '{{ template "__alert_silence_link" . }}'
+
+      - name: "slack-critical"
+        slack_configs:
+          - channel: "#alerts-critical"
+            send_resolved: true
+            api_url: "https://hooks.slack.com/services/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"
+            title: >
+              [{{ (index .Alerts 0).Labels.cluster | toUpper }}] 🔥 CRITICAL - {{ (index .Alerts 0).Labels.alertname }}
+            text: |
+              *Description:* {{ (index .Alerts 0).Annotations.description }}
+              *Namespace:* {{ (index .Alerts 0).Labels.namespace }}
+              *Pod:* {{ (index .Alerts 0).Labels.pod }}
+              *Node:* {{ (index .Alerts 0).Labels.node }}
+            actions:
+              - type: button
+                text: "Runbook 📗"
+                url: "{{ (index .Alerts 0).Annotations.runbook_url }}"
+              - type: button
+                text: "Query 🔍"
+                url: "{{ (index .Alerts 0).GeneratorURL }}"
+              - type: button
+                text: "Dashboard 📊"
+                url: "{{ (index .Alerts 0).Annotations.dashboard }}"
+              - type: button
+                text: "Silence 🔕"
+                url: '{{ template "__alert_silence_link" . }}'
+
+      - name: "slack-warning"
+        slack_configs:
+          - channel: "#alerts-warning"
+            send_resolved: true
+            api_url: "https://hooks.slack.com/services/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"
+            title: >
+              [{{ (index .Alerts 0).Labels.cluster | toUpper }}] ⚠️ WARNING - {{ (index .Alerts 0).Labels.alertname }}
+            text: |
+              *Description:* {{ (index .Alerts 0).Annotations.description }}
+              *Namespace:* {{ (index .Alerts 0).Labels.namespace }}
+              *Pod:* {{ (index .Alerts 0).Labels.pod }}
+              *Node:* {{ (index .Alerts 0).Labels.node }}
+            actions:
+              - type: button
+                text: "Runbook 📗"
+                url: "{{ (index .Alerts 0).Annotations.runbook_url }}"
+              - type: button
+                text: "Query 🔍"
+                url: "{{ (index .Alerts 0).GeneratorURL }}"
+              - type: button
+                text: "Dashboard 📊"
+                url: "{{ (index .Alerts 0).Annotations.dashboard }}"
+              - type: button
+                text: "Silence 🔕"
+                url: '{{ template "__alert_silence_link" . }}'
+
+      - name: "slack-info"
+        slack_configs:
+          - channel: "#alerts-info"
+            send_resolved: true
+            api_url: "https://hooks.slack.com/services/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"
+            title: >
+              [{{ (index .Alerts 0).Labels.cluster | toUpper }}] ℹ️ INFO - {{ (index .Alerts 0).Labels.alertname }}
+            text: |
+              *Description:* {{ (index .Alerts 0).Annotations.description }}
+              *Namespace:* {{ (index .Alerts 0).Labels.namespace }}
+              *Pod:* {{ (index .Alerts 0).Labels.pod }}
+              *Node:* {{ (index .Alerts 0).Labels.node }}
+            actions:
+              - type: button
+                text: "Runbook 📗"
+                url: "{{ (index .Alerts 0).Annotations.runbook_url }}"
+              - type: button
+                text: "Query 🔍"
+                url: "{{ (index .Alerts 0).GeneratorURL }}"
+              - type: button
+                text: "Dashboard 📊"
+                url: "{{ (index .Alerts 0).Annotations.dashboard }}"
+              - type: button
+                text: "Silence 🔕"
+                url: '{{ template "__alert_silence_link" . }}'
+
+
+  monzoTemplate:
+    enabled: true
+  templateFiles: {}
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      kubernetes.io/ingress.class: nginx
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    labels: {}
+    path: '{{ .Values.alertmanager.spec.routePrefix | default "/" }}'
+    pathType: Prefix
+    hosts:
+      - alertmanager.devops-tool.com
+    extraPaths: []
+    tls:
+      - secretName: victoriametrics-ingress-tls
+        hosts:
+          - alertmanager.devops-tool.com
+
+vmalert:
+  annotations: {}
+  labels: {}
+  enabled: true
+  remoteWriteVMAgent: false
+  spec:
+    port: "8080"
+    selectAllByDefault: true
+    evaluationInterval: 60s
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+    extraArgs:
+      http.pathPrefix: "/"
+      remoteWrite.maxQueueSize: "50000"
+      remoteWrite.flushInterval: "10s"
+    externalLabels:
+      cluster: "aks-cluster"
+    datasource:
+      url: http://vmselect-vmks-victoria-metrics-k8s-stack.victoriametrics.svc.cluster.local:8481/select/0/prometheus
+    notifiers:
+      - url: http://vmalertmanager-vmks-victoria-metrics-k8s-stack:9093
+        timeout: "15s"
+    remoteWrite:
+      url: http://vminsert-vmks-victoria-metrics-k8s-stack.victoriametrics.svc.cluster.local:8480/insert/0/prometheus
+      concurrency: 5
+    remoteRead:
+      url: http://vmselect-vmks-victoria-metrics-k8s-stack.victoriametrics.svc.cluster.local:8481/select/0/prometheus
+  templateFiles: {}
+  additionalNotifierConfigs: {}
+  ingress:
+    enabled: false
+
+vmauth:
+  enabled: false
+
+defaultDatasources:
+  grafanaOperator:
+    enabled: false
+  victoriametrics:
+    perReplica: false
+    datasources:
+      - name: VictoriaMetrics
+        type: prometheus
+        access: proxy
+        isDefault: true
+      - name: VictoriaMetrics (DS)
+        isDefault: false
+        access: proxy
+        type: victoriametrics-metrics-datasource
+        version: "0.15.1"
+  alertmanager:
+    perReplica: false
+    datasources:
+      - name: Alertmanager
+        access: proxy
+        jsonData:
+          implementation: prometheus
+  extra: []
+
+grafana:
+  enabled: false
+
+kubeControllerManager:
+  enabled: false
+
+kubeScheduler:
+  enabled: false
+
+kubeEtcd:
+  enabled: false
+
+kubeDns:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+kubelet:
+  enabled: true
+  vmScrape:
+    kind: VMNodeScrape
+    spec:
+      scheme: "https"
+      port: "10250"
+      path: "/metrics"
+      honorLabels: true
+      interval: "60s"
+      scrapeTimeout: "10s"
+      tlsConfig:
+        insecureSkipVerify: true
+        caFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      relabelConfigs:
+        - action: labelmap
+          regex: __meta_kubernetes_node_label_(.+)
+        - sourceLabels: [__metrics_path__]
+          targetLabel: metrics_path
+        - targetLabel: job
+          replacement: kubelet
+        - sourceLabels: [__meta_kubernetes_node_name]
+          targetLabel: instance
+        - targetLabel: cluster
+          replacement: "aks-cluster"
+      metricRelabelConfigs:
+        - sourceLabels: [prometheus]
+          regex: "victoriametrics/vmagent"
+          action: drop
+
+kubeApiServer:
+  enabled: true
+  vmScrape:
+    spec:
+      interval: 60s
+      endpoints:
+        - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          port: https
+          scheme: https
+          tlsConfig:
+            caFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            serverName: kubernetes
+          relabelConfigs:
+            - sourceLabels: [__meta_kubernetes_service_name]
+              targetLabel: service
+          metricRelabelConfigs:
+            - action: labeldrop
+              regex: "uid|beta_kubernetes_io_.*|failure_domain.*|kubernetes_azure_.*|topology_.*|storageprofile"
+      jobLabel: component
+      namespaceSelector:
+        matchNames:
+          - default
+      selector:
+        matchLabels:
+          component: apiserver
+          provider: kubernetes
+
+prometheus-node-exporter:
+  enabled: true
+  service:
+    labels:
+      jobLabel: node-exporter
+  extraArgs:
+    - --collector.filesystem.ignored-mount-points=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
+    - --collector.filesystem.ignored-fs-types=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|erofs|sysfs|tracefs)$
+  resources:
+    limits:
+      cpu: "100m"
+      memory: "128Mi"
+    requests:
+      cpu: "25m"
+      memory: "32Mi"
+  vmScrape:
+    enabled: true
+    spec:
+      jobLabel: jobLabel
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: '{{ include "prometheus-node-exporter.name" (index .Subcharts "prometheus-node-exporter") }}'
+      endpoints:
+        - port: metrics
+          path: /metrics
+          interval: 60s
+          metricRelabelConfigs:
+            - action: labeldrop
+              regex: "kubernetes_azure_.*|topology_.*|storageprofile|beta_kubernetes_io_.*|failure_domain.*"
+            - action: drop
+              source_labels: [mountpoint]
+              regex: "/var/lib/kubelet/pods.+"
+
+kube-state-metrics:
+  enabled: true
+  resources:
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+  vmScrape:
+    enabled: true
+    spec:
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: kube-state-metrics
+      endpoints:
+        - port: http
+          honorLabels: true
+          interval: 60s
+          relabelConfigs:
+            - targetLabel: cluster
+              replacement: "aks-cluster"
+            - targetLabel: job
+              replacement: "kube-state-metrics"
+          metricRelabelConfigs:
+            - action: labeldrop
+              regex: "(uid|kubernetes_azure_.*|topology_.*|storageprofile|beta_kubernetes_io_.*|failure_domain.*)"
+      jobLabel: app.kubernetes.io/name
+
+vmagent:
+  enabled: true
+  labels: {}
+  annotations: {}
+  additionalRemoteWrites:
+    - url: http://vminsert-vmks-victoria-metrics-k8s-stack.victoriametrics.svc.cluster.local:8480/insert/0/prometheus
+      queueConfig:
+        maxSamplesPerSend: 5000
+        capacity: 50000
+        maxShards: 15
+  spec:
+    port: "8429"
+    selectAllByDefault: true
+    scrapeInterval: 60s
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: "1"
+        memory: "1Gi"
+      requests:
+        cpu: "200m"
+        memory: "256Mi"
+    externalLabels:
+      cluster: "aks-cluster"
+    extraArgs:
+      promscrape.streamParse: "true"
+      promscrape.maxScrapeSize: "16MB"
+      memory.allowedPercent: "70"
+      httpListenAddr: "0.0.0.0:8429"
+      promscrape.suppressDuplicateScrapeTargetErrors: "true"
+    storage:
+      volumeClaimTemplate:
+        spec:
+          resources:
+            requests:
+              storage: 5Gi
+
+coreDns:
+  enabled: true
+  service:
+    enabled: true
+    port: 9153
+    targetPort: 9153
+    selector:
+      k8s-app: kube-dns
+  vmScrape:
+    spec:
+      interval: 60s
+      jobLabel: jobLabel
+      namespaceSelector:
+        matchNames: [kube-system]
+      endpoints:
+        - port: http-metrics
+          bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          relabelConfigs:
+            - targetLabel: cluster
+              replacement: "aks-cluster"
+            - targetLabel: job
+              replacement: "coredns"
+
+extraObjects:
+  - apiVersion: operator.victoriametrics.com/v1beta1
+    kind: VMPodScrape
+    metadata:
+      name: pod-metrics
+      namespace: victoriametrics
+    spec:
+      namespaceSelector: {}
+      selector: {}
+      podMetricsEndpoints:
+        - port: metrics
+          interval: 60s
+          path: /metrics
+          relabelConfigs:
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+              action: keep
+              regex: "true"
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+              action: replace
+              target_label: __metrics_path__
+              regex: (.+)
+            - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+              action: replace
+              regex: ([^:]+)(?::\d+)?;(\d+)
+              replacement: $1:$2
+              target_label: __address__
+            - targetLabel: cluster
+              replacement: "aks-cluster"
+            - source_labels: [__meta_kubernetes_pod_name]
+              target_label: pod
+            - source_labels: [__meta_kubernetes_pod_container_name]
+              target_label: container
+            - source_labels: [__meta_kubernetes_namespace]
+              target_label: namespace
+            - source_labels: [__meta_kubernetes_pod_node_name]
+              target_label: node
+            - targetLabel: job
+              replacement: "kubernetes-pods"
+          metricRelabelConfigs:
+            - action: labeldrop
+              regex: "kubernetes_azure_.*|topology_.*|storageprofile|beta_kubernetes_io_.*|failure_domain.*"
+
+podMonitors: []
+serviceMonitors: []

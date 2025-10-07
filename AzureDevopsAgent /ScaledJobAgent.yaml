@@ -1,0 +1,84 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledJob
+metadata:
+  name: azure-devops-agent-scaledjob
+  namespace: devops-agent
+spec:
+  pollingInterval: 5
+  successfulJobsHistoryLimit: 0
+  failedJobsHistoryLimit: 0
+  maxReplicaCount: 5
+  triggers:
+    - type: azure-pipelines
+      metadata:
+        organizationURLFromEnv: organizationURL
+        poolID: "10"
+        personalAccessTokenFromEnv: personalAccessToken
+        targetPipelinesQueueLength: "1"
+        activationTargetPipelinesQueueLength: "0"
+      authenticationRef:
+        name: azdo-kv-auth
+  jobTargetRef:
+    template:
+      metadata:
+        labels:
+          app: azure-devops-agent
+      spec:
+        initContainers:
+          - name: wait-for-secrets
+            image: busybox
+            command: ["/bin/sh", "-c"]
+            args:
+              - |
+                echo "Waiting for secrets to be injected..."
+                while [ ! -f /mnt/secrets-store/AzpToken]; do echo "Waiting..."; sleep 3; done
+                echo "Secrets available!"
+            volumeMounts:
+              - name: secrets-store-inline
+                mountPath: /mnt/secrets-store
+        containers:
+          - name: agent
+            image: yassmineljeri/pfeproject:v16
+            imagePullPolicy: Always
+            securityContext:
+              runAsUser: 0
+              runAsGroup: 0
+              runAsNonRoot: false
+              privileged: false
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - ALL
+                add:
+                  - KILL
+                  - CHOWN #Allows changing file owner and group
+                  - SETUID #Allows the process to set user ID to any user
+                  - SETGID #Allows the process to set group ID  to any group
+                  - FOWNER #Overrides normal file permission checks , allows operations on files even if not owned
+                  - DAC_OVERRIDE #Disables standard Discretionary Access Control (DAC) checks ,lets the process
+            envFrom:
+              - configMapRef:
+                  name: devops-agent-config
+            env:
+              - name: DockerPassword
+                valueFrom:
+                  secretKeyRef:
+                    name: docker-secret
+                    key: DockerPassword
+              - name: DockerUsername
+                valueFrom:
+                  secretKeyRef:
+                    name: docker-secret
+                    key: DockerUsername
+            volumeMounts:
+              - name: secrets-store-inline
+                mountPath: /mnt/secrets-store
+        restartPolicy: Never
+        serviceAccountName: keyvault-sa
+        volumes:
+          - name: secrets-store-inline
+            csi:
+              driver: secrets-store.csi.k8s.io
+              readOnly: true
+              volumeAttributes:
+                secretProviderClass: azure-devops-agent-secrets

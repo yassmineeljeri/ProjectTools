@@ -1,0 +1,440 @@
+image:
+  repository: fluent/fluent-bit
+  tag: "3.1.9"
+  pullPolicy: Always
+
+kind: DaemonSet
+
+replicaCount: 1
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 200Mi
+  requests:
+    cpu: 30m
+    memory: 50Mi
+
+nodeSelector:
+  kubernetes.io/os: linux
+
+tolerations:
+  - key: node-role.kubernetes.io/master
+    operator: Exists
+    effect: NoSchedule
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+  - key: CriticalAddonsOnly
+    operator: Exists
+  - key: kubernetes.azure.com/scalesetpriority
+    operator: Equal
+    value: spot
+    effect: NoSchedule
+
+
+podSecurityContext:
+  runAsUser: 0
+  runAsGroup: 0
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+    add:
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+
+service:
+  type: ClusterIP
+  port: 2020
+  labels:
+    app.kubernetes.io/component: logging
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "2020"
+    prometheus.io/path: "/api/v1/metrics/prometheus"
+
+serviceMonitor:
+  enabled: true
+  namespace: ""
+  interval: 30s
+  scrapeTimeout: 10s
+  jobLabel: fluentbit
+  selector: {}
+  metricRelabelings: []
+  relabelings: []
+
+livenessProbe:
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /api/v1/health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+
+env:
+  - name: CLUSTER_NAME
+    value: "aks-cluster"
+  - name: ENVIRONMENT
+    value: "production"
+  - name: AZURE_RESOURCE_GROUP
+    value: "RG"
+  - name: HOSTNAME
+    valueFrom:
+      fieldRef:
+        fieldPath: spec.nodeName
+
+volumeMounts:
+  - name: config
+    mountPath: /fluent-bit/etc/conf
+  - name: varlog
+    mountPath: /var/log
+    readOnly: true
+  - name: varlibcontainerdcontainers
+    mountPath: /var/lib/containerd/containers
+    readOnly: true
+  - name: etcmachineid
+    mountPath: /etc/machine-id
+    readOnly: true
+  - name: systemdjournal
+    mountPath: /var/log/journal
+    readOnly: true
+  - name: azurelogpath
+    mountPath: /var/log/azure
+    readOnly: true
+  - name: syslog
+    mountPath: /host/var/log/syslog
+    readOnly: true
+  - name: storage
+    mountPath: /tmp/flb-storage
+
+volumes:
+  - name: varlog
+    hostPath:
+      path: /var/log
+  - name: varlibcontainerdcontainers
+    hostPath:
+      path: /var/lib/containerd/containers
+  - name: etcmachineid
+    hostPath:
+      path: /etc/machine-id
+      type: File
+  - name: systemdjournal
+    hostPath:
+      path: /var/log/journal
+  - name: azurelogpath
+    hostPath:
+      path: /var/log/azure
+  - name: syslog
+    hostPath:
+      path: /var/log/syslog
+  - name: storage
+    emptyDir: {}
+
+config:
+  service: |
+    [SERVICE]
+        Daemon Off
+        Flush 10
+        Log_Level info
+        Parsers_File /fluent-bit/etc/parsers.conf
+        Parsers_File /fluent-bit/etc/conf/custom_parsers.conf
+        HTTP_Server On
+        HTTP_Listen 0.0.0.0
+        HTTP_Port 2020
+        Health_Check On
+        storage.metrics on
+        storage.path /tmp/flb-storage/
+        storage.sync normal
+        storage.checksum off
+        storage.backlog.mem_limit 100M
+
+  inputs: |
+    [INPUT]
+        Name              tail
+        Path              /var/log/containers/*.log
+        Tag               kube.*
+        Parser            cri
+        Mem_Buf_Limit     20MB
+        Skip_Long_Lines   On
+        Skip_Empty_Lines  On
+        Refresh_Interval  5
+        Rotate_Wait       5
+        storage.type      filesystem
+        Read_from_Head    Off
+
+    [INPUT]
+        Name              systemd
+        Tag               systemd.kubelet
+        Systemd_Filter    _SYSTEMD_UNIT=kubelet.service
+        Read_From_Tail    On
+        storage.type      filesystem
+
+    [INPUT]
+        Name              systemd
+        Tag               systemd.containerd
+        Systemd_Filter    _SYSTEMD_UNIT=containerd.service
+        Read_From_Tail    On
+        storage.type      filesystem
+
+  filters: |
+    [FILTER]
+        Name                 kubernetes
+        Match                kube.*
+        Kube_URL             https://kubernetes.default.svc:443
+        Kube_CA_File         /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        Kube_Token_File      /var/run/secrets/kubernetes.io/serviceaccount/token
+        Kube_Tag_Prefix      kube.var.log.containers.
+        Merge_Log            On
+        Keep_Log             Off
+        K8S-Logging.Parser   On
+        K8S-Logging.Exclude  On
+        Labels               true
+        Annotations          false
+        Use_Kubelet          Off
+        Kubelet_Port         10250
+        Buffer_Size          256KB
+        Cache_Use_Docker_Id  On
+        Kube_Meta_Cache_TTL  3600
+
+
+    [FILTER]
+        Name   modify
+        Match  kube.*
+        Add    cluster_name ${CLUSTER_NAME}
+        Add    environment ${ENVIRONMENT}
+        Add    cloud_provider azure
+        Add    priority normal
+
+
+
+    [FILTER]
+        Name   modify
+        Match  kube.*
+        Condition Key_Value_Matches  $kubernetes['namespace_name'] ^(kube-system|aks-istio-system|opentelemetry|ingress-nginx|istio-system)$
+        Set    priority high
+
+
+    [FILTER]
+        Name    grep
+        Match   kube.*
+        Exclude message ^(GET /health|GET /metrics|GET /ready|GET /ping).*200.*$
+
+    [FILTER]
+        Name    grep
+        Match   kube.*
+        Exclude $kubernetes['labels']['logging'] ^otlp-only$
+
+    [FILTER]
+        Name           parser
+        Match          kube.*
+        Key_Name       log
+        Parser         json-log
+        Reserve_Data   On
+        Preserve_Key   Off
+
+
+    [FILTER]
+        Name   modify
+        Match  kube.*
+        Condition Key_Does_Not_Exist service_name
+        Copy   app service_name
+
+
+
+    # 10. Clean up
+    [FILTER]
+        Name   modify
+        Match  kube.*
+        Remove stream
+        Remove time
+
+
+    [FILTER]
+        Name   modify
+        Match  systemd.*
+        Add    cluster_name ${CLUSTER_NAME}
+        Add    environment ${ENVIRONMENT}
+        Add    log_type system
+        Add    priority high
+
+
+
+    [FILTER]
+        Name   modify
+        Match  *
+        Condition Key_Value_Matches level ^(?i)(warn|warning)$
+        Set       level warn
+    
+    [FILTER]
+        Name   modify
+        Match  *
+        Condition Key_Value_Matches level ^(?i)(err|error|fatal|critical)$
+        Set       level error
+    
+    [FILTER]
+        Name   modify
+        Match  *
+        Condition Key_Value_Matches level ^(?i)(info|information)$
+        Set       level info
+    
+    [FILTER]
+        Name   modify
+        Match  *
+        Condition Key_Value_Matches level ^(debug|trace|verbose)$
+        Set       level debug
+
+
+
+    [FILTER]
+        Name   parser
+        Match  *
+        Key_Name       message
+        Parser         extract-metrics
+        Reserve_Data   True
+        Preserve_Key   True
+
+
+    [FILTER]
+        Name   modify
+        Match  *
+        Add    log_count 1
+
+
+    [FILTER]
+        Name   modify
+        Match  *
+        Condition Key_Value_Matches level ^error$
+        Add    anomaly_type error_spike
+    
+    [FILTER]
+        Name   modify
+        Match  *
+        Condition Key_Value_Matches message (?i).*(timeout|timed.out|deadline.exceeded).*
+        Add    anomaly_type timeout_event
+    
+    [FILTER]
+        Name   modify  
+        Match  *
+        Condition Key_Value_Matches message (?i).*(connection.refused|connection.reset|no.route.to.host).*
+        Add    anomaly_type connection_issue
+
+
+    [FILTER]
+        Name   modify
+        Match  *
+        Condition Key_Value_Matches message (?i).*(out.of.memory|oom|memory.limit).*
+        Add    anomaly_type memory_issue
+
+
+
+    [FILTER]
+        Name   modify
+        Match  systemd.*
+        Add    cluster_name ${CLUSTER_NAME}
+        Add    environment ${ENVIRONMENT}
+        Add    log_type system
+        Add    priority high
+
+
+
+  outputs: |
+    [OUTPUT]
+        Name              loki
+        Match             *
+        Host              grafanaloki.devops-tool.com 
+        Port              443
+        URI               /loki/api/v1/push
+        tls               On
+        tls.verify        Off
+        Header            Content-Type application/json
+        Header            Authorization Basic bG9raTpsb2tp 
+        Header            X-Scope-OrgID foo
+        labels            job=fluentbit,cluster=${CLUSTER_NAME},namespace=$kubernetes['namespace_name'],pod=$kubernetes['pod_name'],container_name=$kubernetes['container_name'],app=$kubernetes['labels']['app'],priority=$priority,level=$level,cloud=azure
+        line_format       json
+        auto_kubernetes_labels false
+        workers           2
+        retry_limit       3
+        compress          gzip
+
+
+
+  customParsers: |
+    [PARSER]
+        Name        json-log
+        Format      json
+        Time_Keep   Off
+
+
+    [PARSER]
+        Name        multiline-java
+        Format      regex
+        Regex       ^(?<time>\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}).*(?<level>INFO|WARN|ERROR|DEBUG|FATAL)
+        Time_Key    time
+        Time_Format %Y-%m-%d %H:%M:%S
+        Time_Keep   On
+
+    [PARSER]
+        Name        extract-metrics
+        Format      regex
+        Regex       .*(?:(?:response_time|duration|latency)[:=]\s*(?<response_time>\d+(?:\.\d+)?)|status[:=]\s*(?<http_status>\d{3})|error(?:_code|Code)?[:=]\s*[\"\']?(?<error_code>[A-Z0-9_-]+)[\"\']?|memory[:=]\s*(?<memory_usage>\d+(?:\.\d+)?)|cpu[:=]\s*(?<cpu_usage>\d+(?:\.\d+)?)).*
+        Types       response_time:float,http_status:integer,memory_usage:float,cpu_usage:float
+
+    [PARSER]
+        Name        simple-key-value
+        Format      regex
+        Regex       ^(?<timestamp>[^\s]+)\s+(?<level>[^\s]+)\s+(?<message>.*)$
+        Time_Key    timestamp
+        Time_Format %Y-%m-%dT%H:%M:%S.%L
+        Time_Keep   On
+
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+podAnnotations:
+  fluentbit.io/exclude: "true"
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "2020"
+  prometheus.io/path: "/api/v1/metrics/prometheus"
+
+podLabels:
+  app.kubernetes.io/component: logging
+  app.kubernetes.io/part-of: observability
+
+rbac:
+  create: true
+  nodeAccess: true
+
+serviceAccount:
+  create: true
+  annotations: {}
+
+networkPolicy:
+  enabled: false
+
+metrics:
+  enabled: true
+  service:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "2020"
+      prometheus.io/path: "/api/v1/metrics/prometheus"

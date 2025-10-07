@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: victoriametrics-cert-refresher
+  namespace: victoriametrics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cert-refresher
+  template:
+    metadata:
+      labels:
+        app: cert-refresher
+    spec:
+      serviceAccountName: victoriametrics-sa
+      containers:
+        - name: refresher
+          image: busybox
+          command: ["sleep", "3600"]
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "vm-cert-kv"
+
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: vm-cert-kv
+  namespace: victoriametrics
+spec:
+  provider: azure
+  secretObjects:
+    - secretName: victoriametrics-ingress-tls
+      type: kubernetes.io/tls
+      data:
+        - objectName: all-in-one-cert
+          key: tls.key
+        - objectName: all-in-one-cert
+          key: tls.crt
+    - secretName: grafana-ingress-tls
+      type: kubernetes.io/tls
+      data:
+        - objectName: GrafanaDashboardCertificate
+          key: tls.key
+        - objectName: GrafanaDashboardCertificate
+          key: tls.crt
+  parameters:
+    usePodIdentity: "false"
+    clientID: "8d71fe63-293a-45f8-b9c0-be777223230b"
+    keyvaultName: "my-secure-keyvault-aks"
+    tenantId: "604f1a96-cbe8-43f8-abbf-f8eaf5d85730"
+    objects: |
+      array:
+        - |
+          objectName: all-in-one-cert
+          objectType: secret
+          objectVersion: ""
+        - |
+          objectName: GrafanaDashboardCertificate
+          objectType: secret
+          objectVersion: ""
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: victoriametrics-sa
+  namespace: victoriametrics
+  annotations:
+    azure.workload.identity/client-id: "8d71fe63-293a-45f8-b9c0-be777223230b"
+
+
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: test-alert
+  namespace: victoriametrics
+spec:
+  groups:
+    - name: example
+      rules:
+        - alert: FakeHighCPU
+          expr: 1 == 1
+          for: 30s
+          labels:
+            severity: critical
+          annotations:
+            summary: "Fake alert"
+            description: "This is a test alert from VictoriaMetrics"
+
+
+---
+commande to know configmaps of defaultdashboards of vm to then automatically injected into grafana dashboard with helm  
+for cm in $(kubectl get configmaps -n victoriametrics -o jsonpath='{.items[*].metadata.name}' | grep vmks); do
+kubectl label configmap $cm -n victoriametrics grafana_dashboard=1 --overwrite
+done
+
+
+
+helm upgrade vmks vm/victoria-metrics-k8s-stack   -n victoriametrics  -f vm-k8s-values.yaml

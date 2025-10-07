@@ -1,0 +1,132 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafanadashboard-cert-refresher
+  namespace: grafanadashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cert-refresher
+  template:
+    metadata:
+      labels:
+        app: cert-refresher
+    spec:
+      serviceAccountName: grafanadashboard-sa
+      containers:
+        - name: refresher
+          image: busybox
+          command: ["sleep", "3600"]
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "grafana-cert-kv"
+
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: grafana-cert-kv
+  namespace: grafanadashboard
+spec:
+  provider: azure
+  secretObjects:
+    - secretName: grafana-ingress-tls
+      type: kubernetes.io/tls
+      data:
+        - objectName: GrafanaDashboardCertificate
+          key: tls.key
+        - objectName: GrafanaDashboardCertificate
+          key: tls.crt
+  parameters:
+    usePodIdentity: "false"
+    clientID: "980fd6bd-d343-405c-a52e-79c8418a2d90"
+    keyvaultName: "my-secure-keyvault-aks"
+    tenantId: "604f1a96-cbe8-43f8-abbf-f8eaf5d85730"
+    objects: |
+      array:
+        - |
+          objectName: GrafanaDashboardCertificate
+          objectType: secret
+          objectVersion: ""
+
+
+---
+
+adminUser: admin
+adminPassword: admin
+
+persistence:
+  enabled: true
+  storageClassName: default  # or your custom StorageClass
+  accessModes:
+    - ReadWriteOnce
+  size: 10Gi
+
+service:
+  type: ClusterIP
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - grafanadashboard.devops-tool.com
+  tls:
+    - secretName: grafana-ingress-tls
+      hosts:
+        - grafanadashboard.devops-tool.com
+
+# 🧠 Datasource configuration
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: VictoriaMetrics
+        type: prometheus
+        access: proxy
+        isDefault: true
+        url: https://vmselect.devops-tool.com/select/0/prometheus
+
+# 📦 Auto-import dashboards created by VictoriaMetrics as ConfigMaps
+sidecar:
+  dashboards:
+    enabled: true
+    label: grafana_dashboard
+    searchNamespace: victoriametrics
+    folder: /var/lib/grafana/dashboards
+    defaultFolderName: VictoriaMetrics
+
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: 'VictoriaMetrics'
+        orgId: 1
+        folder: 'VictoriaMetrics'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/VictoriaMetrics
+
+
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: grafanadashboard-sa
+  namespace: grafanadashboard
+  annotations:
+    azure.workload.identity/client-id: "980fd6bd-d343-405c-a52e-79c8418a2d90"

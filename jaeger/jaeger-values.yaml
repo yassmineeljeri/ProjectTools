@@ -1,0 +1,175 @@
+provisionDataStore:
+  cassandra: false
+  elasticsearch: true
+  kafka: true
+
+storage:
+  type: elasticsearch
+  elasticsearch:
+    host: jaeger-elasticsearch
+    port: 9200
+    scheme: http
+    username: "elastic"
+    password: "changeme"
+  kafka:
+    brokers:
+      - jaeger-kafka:9092
+    topic: jaeger-spans
+    authentication: none
+    extraEnv: []
+  grpcPlugin:
+    extraEnv: []
+  badger:
+    ephemeral: true
+    persistence:
+      mountPath: /mnt/data
+      useExistingPvcName: ""
+    extraEnv: []
+  memory:
+    extraEnv: []
+
+
+
+ingester:
+  enabled: true
+  extraEnv:
+    - name: SPAN_STORAGE_TYPE
+      value: elasticsearch
+    - name: ES_SERVER_URLS
+      value: http://jaeger-elasticsearch:9200
+    - name: ES_USERNAME
+      value: elastic
+    - name: ES_PASSWORD
+      value: changeme
+    - name: KAFKA_CONSUMER_BROKERS
+      value: jaeger-kafka:9092
+    - name: KAFKA_CONSUMER_TOPIC
+      value: jaeger-spans
+    - name: KAFKA_CONSUMER_CONFIG_AUTO_OFFSET_RESET
+      value: latest
+  livenessProbe:
+    httpGet:
+      path: /
+      port: 14270
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /
+      port: 14270
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    failureThreshold: 3
+
+
+collector:
+  enabled: true
+  service:
+    enabled: true
+    ports:
+      - name: grpc
+        port: 14250
+        targetPort: 14250
+        protocol: TCP
+      - name: http
+        port: 14268
+        targetPort: 14268
+        protocol: TCP
+      - name: otlp-grpc
+        port: 4317
+        targetPort: 4317
+        protocol: TCP
+      - name: otlp-http
+        port: 4318
+        targetPort: 4318
+        protocol: TCP
+  extraArgs:
+    - "--admin-http-port=14269"
+    - "--health-check-http-port=14269"
+  extraEnv:
+    - name: SPAN_STORAGE_TYPE
+      value: kafka
+    - name: KAFKA_PRODUCER_BROKERS
+      value: jaeger-kafka:9092
+    - name: KAFKA_PRODUCER_TOPIC
+      value: jaeger-spans
+    - name: COLLECTOR_OTLP_ENABLED
+      value: "true"
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    pathType: Prefix
+    path: /
+    hosts:
+      - jaegercollector.devops-tool.com
+    tls:
+      - hosts:
+          - jaegercollector.devops-tool.com
+        secretName: jaeger-collector-ingress-tls
+
+agent:
+  enabled: true
+
+query:
+  enabled: true
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    pathType: Prefix
+    path: /
+    hosts:
+      - jaegerdashboard.devops-tool.com
+    tls:
+      - hosts:
+          - jaegerdashboard.devops-tool.com
+        secretName: jaegerdashboard-ingress-tls
+
+kafka:
+  replicaCount: 1
+  controller:
+    replicaCount: 1
+    extraConfig: |
+      auto.create.topics.enable=true
+      offsets.topic.replication.factor=1
+
+  provisioning:
+    enabled: true
+  listeners:
+    client:
+      protocol: PLAINTEXT
+    controller:
+      protocol: PLAINTEXT
+    interbroker:
+      protocol: PLAINTEXT
+    external:
+      protocol: PLAINTEXT
+
+elasticsearch:
+  enabled: true
+  master:
+    replicaCount: 1
+    persistence:
+      enabled: true
+      storageClass: "managed-csi"
+      size: 10Gi
+  data:
+    replicaCount: 1
+    persistence:
+      enabled: true
+      storageClass: "managed-csi"
+      size: 10Gi
+  coordinating:
+    replicaCount: 0
+  ingest:
+    replicaCount: 0
+  sysctlImage:
+    enabled: true
+  volumePermissions:
+    enabled: true

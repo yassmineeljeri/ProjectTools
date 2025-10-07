@@ -1,0 +1,18 @@
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: azdo-kv-auth
+  namespace: devops-agent
+spec:
+  azureKeyVault:
+    vaultUri: https://my-secure-keyvault-aks.vault.azure.net/
+    podIdentity:
+      identityId: 980fd6bd-d343-405c-a52e-79c8418a2d90
+      provider: azure-workload
+    secrets:
+      - parameter: AZP_TOKEN
+        name: AzpToken
+      - parameter: AZP_POOL
+        name: AzpPool
+      - parameter: AZP_URL
+        name: AzpUrl
