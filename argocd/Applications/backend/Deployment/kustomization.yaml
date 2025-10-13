@@ -18,7 +18,7 @@ images:
   - name: yassmineljeri/book-transaction-service
     newTag: v1.1.0
   - name: yassmineljeri/feedback-service
-    newTag: v1.0.9
+    newTag: v1.1.0
   - name: yassmineljeri/notification-service
     newTag: v1.0.9
   - name: yassmineljeri/security-service
