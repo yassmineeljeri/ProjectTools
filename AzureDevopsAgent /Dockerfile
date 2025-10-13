@@ -47,6 +47,16 @@ RUN curl -LO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/sta
 RUN curl -sSL "https://github.com/google/go-containerregistry/releases/download/v${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" | tar -xz -C /usr/local/bin crane
 
 
+RUN curl -sSLo /tmp/sonar-scanner.zip \
+    https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip && \
+    unzip /tmp/sonar-scanner.zip -d /usr/local && \
+    ln -s /usr/local/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner /usr/local/bin/sonar-scanner && \
+    rm /tmp/sonar-scanner.zip
+
+RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.61.0
+
+
+
 RUN apt-get purge -y apt apt-transport-https iputils-ping net-tools --allow-remove-essential && \
     rm -rf /var/lib/apt /etc/apt /usr/share/man/* && \
     find / -name ping -type f -delete && \
@@ -57,7 +67,7 @@ WORKDIR ${AGENT_DIR}
 
 # Copy entrypoint start
 
-COPY ./start.sh .
+COPY start.sh .
 
 RUN chmod +x ./start.sh
 
