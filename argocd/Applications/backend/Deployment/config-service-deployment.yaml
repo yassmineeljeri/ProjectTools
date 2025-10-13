@@ -1,0 +1,156 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: config-service-deployment
+  namespace: backend-ns
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: config-service
+  template:
+    metadata:
+      labels:
+        app: config-service
+        version: v1
+        logging: otlp-only
+    spec:
+      serviceAccountName: bsn-sa
+      containers:
+        - name: config-service
+          image: yassmineljeri/config-service:v1.4.9
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8888
+          volumeMounts:
+            - name: secrets-store-inline
+              mountPath: "/mnt/secrets-store"
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+
+          env:
+            - name: GIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: git-credentials
+                  key: GIT_USERNAME
+            - name: GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: git-credentials
+                  key: GIT_PASSWORD
+            - name: SPRING_PROFILES_ACTIVE
+              value: prod
+            - name: SERVICE_NAME
+              value: "config-service"
+            - name: SERVICE_VERSION
+              value: "v1.4.9"
+            - name: ENVIRONMENT
+              value: "prod"
+
+            - name: JAVA_TOOL_OPTIONS
+              value: "-javaagent:/app/opentelemetry-javaagent.jar -Xmx512m -Xms256m -XX:+UseG1GC"
+
+            # Service identity
+            - name: OTEL_SERVICE_NAME
+              value: "config-service"   # match your app name
+
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment=production,service.version=v1.4.9"
+
+            # Collector endpoint
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector-opentelemetry-collector.opentelemetry.svc.cluster.local:4317"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "grpc"
+
+            # Traces
+            - name: OTEL_TRACES_EXPORTER
+              value: "otlp"
+            - name: OTEL_TRACES_SAMPLER
+              value: "parentbased_traceidratio"
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: "0.1"   # 10% sampling (your file had 1.0 = 100%)
+
+            # Metrics
+            - name: OTEL_METRICS_EXPORTER
+              value: "otlp"
+            - name: OTEL_INSTRUMENTATION_MICROMETER_ENABLED
+              value: "true"
+
+            # Logs
+            - name: OTEL_LOGS_EXPORTER
+              value: "otlp"
+            - name: OTEL_INSTRUMENTATION_LOGBACK_APPENDER_ENABLED
+              value: "true"
+
+            # Compression (optional, for efficiency)
+            - name: OTEL_EXPORTER_OTLP_COMPRESSION
+              value: "gzip"
+
+      volumes:
+        - name: tmp
+          emptyDir: { }
+        - name: secrets-store-inline
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: csi-env
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: config-service-svc
+  namespace: backend-ns
+spec:
+  selector:
+    app: config-service
+  ports:
+    - protocol: TCP
+      name: http-config
+      port: 8888
+      targetPort: 8888
+  type: ClusterIP
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: csi-env
+  namespace: backend-ns
+spec:
+  provider: azure
+  secretObjects:
+    - secretName: git-credentials
+      type: Opaque
+      data:
+        - objectName: GIT-USERNAME
+          key: GIT_USERNAME
+        - objectName: GIT-PASSWORD
+          key: GIT_PASSWORD
+  parameters:
+    usePodIdentity: "false"
+    clientID: 980fd6bd-d343-405c-a52e-79c8418a2d90
+    keyvaultName: "my-secure-keyvault-aks"
+    tenantId: 604f1a96-cbe8-43f8-abbf-f8eaf5d85730
+    objects: |
+      array:
+        - |
+          objectName: GIT-USERNAME
+          objectType: secret
+        - |
+          objectName: GIT-PASSWORD
+          objectType: secret
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bsn-sa
+  namespace: backend-ns
+  annotations:
+    azure.workload.identity/client-id: 980fd6bd-d343-405c-a52e-79c8418a2d90

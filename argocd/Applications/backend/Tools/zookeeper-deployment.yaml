@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zookeeper
+  namespace: backend-ns
+  labels:
+    app: zookeeper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zookeeper
+  template:
+    metadata:
+      labels:
+        app: zookeeper
+    spec:
+      containers:
+        - name: zookeeper
+          image: confluentinc/cp-zookeeper:latest
+          ports:
+            - containerPort: 2181
+          env:
+            - name: ZOOKEEPER_SERVER_ID
+              value: "1"
+            - name: ZOOKEEPER_CLIENT_PORT
+              value: "2181"
+            - name: ZOOKEEPER_TICK_TIME
+              value: "2000"
+          #check when  zookeeper is ready to receive requests
+          readinessProbe:
+            tcpSocket:
+              port: 2181
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: kafka-log
+              mountPath: /var/log/kafka/
+            - name: kafka-config
+              mountPath: /etc/kafka
+            - name: zk-data
+              mountPath: /var/lib/zookeeper/data
+            - name: zk-log
+              mountPath: /var/lib/zookeeper/log
+      volumes:
+        - name: kafka-log
+          emptyDir: { }
+        - name: kafka-config
+          emptyDir: { }
+        - name: zk-data
+          emptyDir: { }
+        - name: zk-log
+          emptyDir: { }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper-svc
+  namespace: backend-ns
+spec:
+  ports:
+    - port: 2181
+      targetPort: 2181
+  type: ClusterIP
+  selector:
+    app: zookeeper

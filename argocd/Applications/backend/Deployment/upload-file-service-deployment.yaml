@@ -1,0 +1,99 @@
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: upload-file-service-deployment
+  namespace: backend-ns
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: upload-file-service
+  template:
+    metadata:
+      labels:
+        app: upload-file-service
+        version: v1
+        logging: otlp-only
+    spec:
+      serviceAccountName: bsn-sa
+      containers:
+        - name: upload-file-service
+          image: yassmineljeri/upload-file-service:v1.0.9
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8054
+          env:
+            - name: SERVICE_VERSION
+              value: "v1.0.9"
+            - name: ENVIRONMENT
+              value: "prod"
+            - name: SPRING_PROFILES_ACTIVE
+              value: prod
+            - name: SERVICE_NAME
+              value: "upload-file-service"
+
+            # OpenTelemetry Configuration
+            - name: OTEL_SERVICE_NAME
+              value: "upload-file-service"
+
+            - name: JAVA_TOOL_OPTIONS
+              value: "-javaagent:/app/opentelemetry-javaagent.jar -Xmx512m -Xms256m -XX:+UseG1GC"
+
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment=production,service.version=v1.4.9"
+
+            # Collector endpoint
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector-opentelemetry-collector.opentelemetry.svc.cluster.local:4317"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "grpc"
+
+            # Traces
+            - name: OTEL_TRACES_EXPORTER
+              value: "otlp"
+            - name: OTEL_TRACES_SAMPLER
+              value: "parentbased_traceidratio"
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: "1.0"
+            # Metrics
+            - name: OTEL_METRICS_EXPORTER
+              value: "otlp"
+            - name: OTEL_INSTRUMENTATION_MICROMETER_ENABLED
+              value: "true"
+
+            # Logs
+            - name: OTEL_LOGS_EXPORTER
+              value: "otlp"
+            - name: OTEL_INSTRUMENTATION_LOGBACK_APPENDER_ENABLED
+              value: "true"
+
+            - name: OTEL_EXPORTER_OTLP_COMPRESSION
+              value: "gzip"
+
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: upload-file-service-svc
+  namespace: backend-ns
+spec:
+  selector:
+    app: upload-file-service
+  ports:
+    - protocol: TCP
+      name: http-upload-file
+      port: 8054
+      targetPort: 8054
+  type: ClusterIP
+---

@@ -1,0 +1,80 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bsn-backend-app
+  namespace: argocd
+  labels:
+    app.kubernetes.io/managed-by: argocd
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: |
+      config-service=registrybsn.azurecr.io/config-service,
+      book-services=registrybsn.azurecr.io/book-services,
+      book-transaction-service=registrybsn.azurecr.io/book-transaction-service,
+      feedback-service=registrybsn.azurecr.io/feedback-service,
+      notification-service=registrybsn.azurecr.io/notification-service,
+      security-service=registrybsn.azurecr.io/security-service,
+      upload-file-service=registrybsn.azurecr.io/upload-file-service
+    argocd-image-updater.argoproj.io/config-service.update-strategy: semver
+    argocd-image-updater.argoproj.io/config-service.allow-tags: regexp:^v\d+\.\d+\.\d+$
+
+    argocd-image-updater.argoproj.io/book-services.update-strategy: semver
+    argocd-image-updater.argoproj.io/book-services.allow-tags: regexp:^v\d+\.\d+\.\d+$
+
+    argocd-image-updater.argoproj.io/book-transaction-service.update-strategy: semver
+    argocd-image-updater.argoproj.io/book-transaction-service.allow-tags: regexp:^v\d+\.\d+\.\d+$
+
+    argocd-image-updater.argoproj.io/feedback-service.update-strategy: semver
+    argocd-image-updater.argoproj.io/feedback-service.allow-tags: regexp:^v\d+\.\d+\.\d+$
+
+    argocd-image-updater.argoproj.io/notification-service.update-strategy: semver
+    argocd-image-updater.argoproj.io/notification-service.allow-tags: regexp:^v\d+\.\d+\.\d+$
+
+    argocd-image-updater.argoproj.io/security-service.update-strategy: semver
+    argocd-image-updater.argoproj.io/security-service.allow-tags: regexp:^v\d+\.\d+\.\d+$
+
+    argocd-image-updater.argoproj.io/upload-file-service.update-strategy: semver
+    argocd-image-updater.argoproj.io/upload-file-service.allow-tags: regexp:^v\d+\.\d+\.\d+$
+
+    #semver - Update to the latest version of an image considering semantic versioning constraints
+    # restricts allowed image tags to semantic versioning format like v1.2.3
+    #^v\d+\.\d+\.\d+$ matches a string that starts (^) with v,
+    # followed by one or more digits (\d+), a dot (\.),
+    # more digits, another dot, more digits, and ends ($).
+
+    argocd-image-updater.argoproj.io/write-back-method: git
+    argocd-image-updater.argoproj.io/write-back-target: kustomization
+    argocd-image-updater.argoproj.io/git-branch: main
+    argocd-image-updater.argoproj.io/git-path: Deployments/Application/Backend/Deployment
+    argocd-image-updater.argoproj.io/git-commit-message: "Update image tags in kustomization.yaml"
+spec:
+  project: pfeproject
+  source:
+    repoURL: 'https://github.com/samiouerfelli/ConfigRepo.git'
+    targetRevision: main
+    path: Deployments/Application/Backend/Deployment
+    kustomize: {}
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: backend-ns
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+      - PruneLast=true
+      - RespectIgnoreDifferences=true
+  revisionHistoryLimit: 20
+
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      namespace: backend-ns
+      jsonPointers:
+        - /spec/replicas
+      managedFieldsManagers:
+        - horizontal-pod-autoscaler
+
+#  •	selfHeal: true → corrige toute dérive (ex : si un pod roule encore avec l’ancien tag).
+#  •	prune: true → supprime les ressources devenues inutiles.

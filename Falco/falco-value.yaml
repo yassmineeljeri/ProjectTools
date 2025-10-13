@@ -1,0 +1,283 @@
+responseActions:
+  enabled: true
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 128Mi
+  limits:
+    cpu: 1000m
+    memory: 1024Mi
+falco-talon:
+  replicaCount: 1
+  config:
+    defaultNotifiers:
+      - slack
+    watchRules: true
+    notifiers:
+      slack:
+        webhookUrl: "https://hooks.slack.com/services/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"
+        icon: "https://upload.wikimedia.org/wikipedia/commons/2/26/Circaetus_gallicus_claw.jpg"
+        username: "Falco Talon"
+        footer: "https://github.com/falcosecurity/falco-talon"
+        format: "long"
+    rulesOverride: |
+      - action: Label Pod as Suspicious
+        description: "Add the label suspicious=true"
+        actionner: kubernetes:label
+        parameters:
+          labels:
+            suspicious: "true"
+
+      - action: Terminate Pod
+        actionner: kubernetes:terminate
+
+      - rule: Network Tool Execution In Container  Detected
+        description: "Label pods as suspicious after attempts to execute network tool "
+        match:
+          rules:
+            - network_tool_execution_in_container
+        actions:
+          - action: Label Pod as Suspicious
+      
+      - rule: Container Runtime Client Access Attempts
+        description: "Terminate pod that accessed container runtime socket"
+        match:
+          rules:
+            - container_runtime_client_usage
+        actions:
+          - action: Terminate Pod
+
+
+#  container.id != host ne déclenche pas l’alerte pour l’hôte,
+#  seulement si l’action vient d’un conteneur.
+customRules:
+  falco_custom_rules.yaml: |
+    - rule: network_tool_execution_in_container
+      desc: Detect execution of network tools (curl/wget) inside container
+      condition: >
+        evt.type = execve and
+        container.id != host and  
+        proc.name in (curl, wget) and
+        not k8smeta.pod.name startswith "jaeger"
+      output: >
+        Network tool execution detected
+        (proc=%proc.name args=%proc.args ns=%k8smeta.ns.name pod=%k8smeta.pod.name container=%container.name image=%container.image.repository)
+      priority: WARNING
+      tags: [network, container, suspicious]
+    
+    - rule: container_runtime_client_usage
+      desc: Detect use of runtime clients (crictl/ctr/docker) or any connect/open to the containerd socket
+      condition: >
+        container.id != host and
+        (
+          (evt.type = execve and proc.name in (crictl, ctr, docker))
+          or
+          (evt.type in (open, openat) and fd.name contains "/var/run/containerd/containerd.sock")
+        )
+      output: >
+        Container runtime client usage detected (proc=%proc.name args=%proc.args pod=%k8smeta.pod.name ns=%k8smeta.ns.name fd=%fd.name)
+      priority: CRITICAL
+      tags: [runtime, containerd, critical]
+
+
+
+
+#    - rule: suspicious_tool_execution_in_container
+#      desc: Detect package manager, download tool, miner, or script execution in a running container
+#      condition: >
+#        evt.type = execve and
+#        container.id != host and
+#        not k8smeta.ns.name in (devops-agent-ns) and
+#        (
+#          proc.name in (apt, apt-get, yum, dnf, apk, pip, pip3, gem, npm)
+#          or proc.name in (xmrig, minerd, cpuminer, cryptonight, ethminer)
+#          or proc.name in (python, python3, perl, ruby, php, node, sh, bash, zsh, ksh)
+#        ) and
+#        not k8smeta.pod.name startswith "kafka" and
+#        not k8smeta.pod.name startswith "vmagent-vmks-victoria-metrics-k8s-stack"
+#      output: >
+#        Suspicious tool/script execution detected
+#        (proc=%proc.name args=%proc.args ns=%k8smeta.ns.name pod=%k8smeta.pod.name container=%container.name image=%container.image.repository)
+#      priority: WARNING
+#      tags: [container, software_installation, download, mining, script]
+
+
+#    - rule: privileged_container_started
+#      desc: Detect any privileged container being started (outside system namespaces)
+#      condition: >
+#        evt.type=container and evt.dir=< and
+#        container.privileged=true and
+#        not k8smeta.ns.name in (kube-system, istio-system, falco)
+#      output: "Privileged container started (ns=%k8smeta.ns.name pod=%k8smeta.pod.name container=%container.name image=%container.image.repository)"
+#      priority: CRITICAL
+#      tags: [container, privilege_escalation]
+
+#    - rule: sensitive_file_access
+#      desc: Detect access to sensitive files
+#      condition: >
+#        evt.type in (open, openat, openat2) and
+#        evt.is_open_read = true and
+#        container.id != host and
+#        (
+#          fd.name in (/etc/shadow, /etc/gshadow, /etc/sudoers)
+#          or fd.name glob /root/.kube/*
+#          or fd.name glob /home/*/.kube/*
+#        ) and
+#        not proc.name in (sshd, kubelet, containerd, java, node, python)
+#      output: "Sensitive file accessed (file=%fd.name proc=%proc.name ns=%k8smeta.ns.name pod=%k8smeta.pod.name)"
+#      priority: CRITICAL
+#      tags: [filesystem, credentials, secrets]
+
+#    - rule: write_to_system_directories
+#      desc: Detect writes to critical system directories inside containers
+#      condition: >
+#        evt.type in (open, openat, openat2) and
+#        evt.is_open_write = true and
+#        container.id != host and
+#        (
+#          fd.name glob /bin/* or
+#          fd.name glob /usr/bin/* or
+#          fd.name glob /sbin/* or
+#          fd.name glob /usr/sbin/*
+#        )
+#      output: "Write to system directory (file=%fd.name proc=%proc.name ns=%k8smeta.ns.name pod=%k8smeta.pod.name)"
+#      priority: CRITICAL
+#      tags: [filesystem, persistence, container]
+#
+#
+#    - rule: contact_cloud_metadata_service
+#      desc: Detect attempts to contact cloud metadata services
+#      condition: >
+#        evt.type=connect and
+#        evt.dir=< and
+#        container.id != host and
+#        fd.sip in (169.254.169.254, fd00:ec2::254) and
+#        not (k8smeta.pod.name startswith "cloud-node-manager" or
+#            k8smeta.pod.name startswith "ztunnel" )
+#      output: "Cloud metadata service accessed (proc=%proc.name ip=%fd.sip ns=%k8smeta.ns.name pod=%k8smeta.pod.name)"
+#      priority: WARNING
+#      tags: [network, cloud, credentials, container]
+
+#      - rule: Privileged Container Detection
+#        description: "Terminate Privileged Pod  "
+#        match:
+#          rules:
+#            - privileged_container_started
+#        actions:
+#          - action: Terminate Pod
+
+#      - rule: Sensitive File Access Detection
+#        description: "Terminate pods attempts to open sensitive file "
+#        match:
+#          rules:
+#            - sensitive_file_access
+#        actions:
+#          - action: Label Pod as Suspicious
+
+#      - rule: Suspicious tool execution  Detection
+#        description: "Terminate pods attempts to open execute suspicious tool "
+#        match:
+#          rules:
+#            - suspicious_tool_execution_in_container
+#        actions:
+#          - action: Terminate Pod
+
+#      - rule: Write to System Directories Detection
+#        description: "Terminate pods writing to /bin, /usr/bin, /sbin, etc."
+#        match:
+#          rules:
+#            - write_to_system_directories
+#        actions:
+#          - action: Terminate Pod
+#
+#      - rule: Privilege Escalation Attempt
+#        description: "Terminate pods attempting sudo/su/doas"
+#        match:
+#          rules:
+#            - sudo_execution_in_container
+#        actions:
+#          - action: Terminate Pod
+#
+#      - rule: Cloud Metadata Access Detection
+#        description: "Quarantine pods trying to access cloud metadata service"
+#        match:
+#          rules:
+#            - contact_cloud_metadata_service
+#        actions:
+#          - action: Label Pod as Suspicious
+#
+#
+#
+#      - rule: Reverse Shell in Container Detection
+#        description: "Terminate pods attempts to open reverse shell "
+#        match:
+#          rules:
+#            - reverse_shell_detected
+#          output_fields:
+#            - k8smeta.ns.name!=kube-system
+#            - k8smeta.ns.name!=istio-system
+#        actions:
+#          - action: Terminate Pod
+
+
+
+falcosidekick:
+  enabled: true
+  fullfqdn: false
+  listenPort: 2801
+  replicaCount: 1
+  config:
+    talon:
+      address: "http://falco-talon.falco.svc.cluster.local:2803"
+      minimumpriority: "warning"
+      checkcert: true #false
+  webui:
+    enabled: true
+    replicaCount: 1
+
+tty: true
+
+collectors:
+  kubernetes:
+    enabled: true
+
+driver:
+  enabled: true
+  kind: modern_ebpf
+
+metrics:
+  enabled: true
+  interval: 15m
+  service:
+    create: false
+
+# Enable falcoctl to install only plugins
+falcoctl:
+  artifact:
+    install:
+      enabled: true
+    follow:
+      enabled: false
+  config:
+    artifact:
+      install:
+        refs:
+          #          - falco-rules:4 #( default rules)
+          - ghcr.io/falcosecurity/plugins/plugin/k8smeta:0.3.1
+          - ghcr.io/falcosecurity/plugins/plugin/container:0.3.6
+
+falco:
+  rules_files:
+    #    - /etc/falco/falco_rules.yaml #( default rules)
+    - /etc/falco/rules.d/falco_custom_rules.yaml
+  rule_matching: first
+  load_plugins:
+    - k8smeta
+    - container
+  #https://github.com/falcosecurity/plugins/tree/main/plugins/k8smeta
+#  append_output:
+#    - match:
+#        source: syscall
+#      extra_output: "k8smeta.ns.name=%k8smeta.ns.name k8smeta.pod.name=%k8smeta.pod.name k8smeta.pod.uid=%k8smeta.pod.uid"
+

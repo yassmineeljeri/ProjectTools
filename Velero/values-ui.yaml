@@ -1,0 +1,58 @@
+configuration:
+  logLevel: "info"
+  general:
+    # Secret passphrase use to generate JWT
+    secretPassPhrase:
+      value: "hjh$uYNg@scd&MVCyHG9Zjq$*o%wKvw%hya#tt8*qLwP%u6WvKabPor2ZE!edRLqFPHpZxE9G5squBt$mQj99Qy*P$kaj84yJ8z#6nx4@&4tNPhq^7!jd^2qBjJ9i"
+      useSecret: true
+      name: "ui-token"
+      key: "pass_phrase"
+    veleroNamespace: "velero"
+
+
+rbac:
+  create: true
+  clusterAdministrator: true
+  clusterAdministratorName: cluster-admin
+
+
+ingress:
+  hosts:
+    - host: velero.devops-tool.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+
+env:
+  - name: BASIC_AUTH_ENABLED
+    value: "true"
+  - name: BASIC_AUTH_USERNAME
+    valueFrom:
+      secretKeyRef:
+        name: credentials
+        key: user
+  - name: BASIC_AUTH_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: credentials
+        key: password
+
+volumes:
+  - name: secrets-store-inline
+    csi:
+      driver: secrets-store.csi.k8s.io
+      readOnly: true
+      volumeAttributes:
+        secretProviderClass: credentials-env
+
+volumeMounts:
+  - name: secrets-store-inline
+    mountPath: "/mnt/secrets-store"
+    readOnly: true

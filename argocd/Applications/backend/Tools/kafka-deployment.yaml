@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  namespace: backend-ns
+  labels:
+    app: kafka
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      initContainers:
+        - name: wait-for-zookeeper
+          image: busybox
+          command: [ 'sh', '-c', 'until nc -z zookeeper-svc 2181; do echo waiting for zookeeper; sleep 5; done;' ]
+      containers:
+        - name: kafka
+          image: confluentinc/cp-kafka:7.9.1
+          ports:
+            - containerPort: 9092
+          env:
+            - name: KAFKA_ZOOKEEPER_CONNECT
+              value: zookeeper-svc:2181
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: PLAINTEXT://kafka-svc:9092
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: PLAINTEXT:PLAINTEXT
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+          volumeMounts:
+            - name: kafka-vm
+              mountPath: /etc/kafka/
+            - name : kafka-log
+              mountPath: /var/log/kafka/
+            - name: kf-data
+              mountPath: /var/lib/kafka/data
+      volumes:
+        - name: kafka-log
+          emptyDir: { }
+        - name: kafka-vm
+          emptyDir: { }
+        - name: kf-data
+          emptyDir: { }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-svc
+  namespace: backend-ns
+spec:
+  ports:
+    - port: 9092
+      targetPort: 9092
+  type: ClusterIP
+  selector:
+    app: kafka

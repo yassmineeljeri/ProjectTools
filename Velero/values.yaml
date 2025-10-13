@@ -1,0 +1,47 @@
+podLabels:
+  azure.workload.identity/use: "true"
+
+initContainers:
+  - name: velero-plugin-for-microsoft-azure
+    image: velero/velero-plugin-for-microsoft-azure:v1.13.0
+    imagePullPolicy: IfNotPresent
+    volumeMounts:
+      - mountPath: /target
+        name: plugins
+
+
+configuration:
+  # Parameters for the BackupStorageLocation(s). Configure multiple by adding other element(s) to the backupStorageLocation slice.
+  # See https://velero.io/docs/v1.6/api-types/backupstoragelocation/
+  backupStorageLocation:
+    - name: default
+      provider: "azure"
+      bucket: "velerocontainer"
+      default: true
+      accessMode: ReadWrite
+      config:
+        useAAD: true
+        resourceGroup: "RG"
+        storageAccount: "velerostrbackup"
+        subscriptionId: "fb098201-265a-4393-ae77-d6d3c4effde5"
+  volumeSnapshotLocation:
+    - name: default
+      provider: "azure"
+      config:
+        resourceGroup: "MC_RG_aks-cluster_eastus"
+        subscriptionId: "fb098201-265a-4393-ae77-d6d3c4effde5"
+
+serviceAccount:
+  server:
+    create: true
+    name: velero
+    annotations:
+      azure.workload.identity/client-id: f1e04b39-1dab-49cc-bf87-f96f45925d56
+
+credentials:
+  secretContents:
+    cloud: |
+      AZURE_SUBSCRIPTION_ID= fb098201-265a-4393-ae77-d6d3c4effde5
+      AZURE_RESOURCE_GROUP= MC_RG_aks-cluster_eastus
+      AZURE_CLOUD_NAME= AzurePublicCloud
+

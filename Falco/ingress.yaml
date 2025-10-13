@@ -1,0 +1,94 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  name: falco-ingress
+  namespace: falco
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: falco.devops-tool.com
+      http:
+        paths:
+          - backend:
+              service:
+                name: falco-falcosidekick-ui
+                port:
+                  number: 2802
+            path: /
+            pathType: Prefix
+  tls:
+    - hosts:
+        - falco.devops-tool.com
+      secretName: falco-ingress-tls
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: falco-cert-kv
+  namespace: falco
+spec:
+  provider: azure
+  secretObjects:
+    - secretName: falco-ingress-tls
+      type: kubernetes.io/tls
+      data:
+        - objectName: all-in-one-cert
+          key: tls.key
+        - objectName: all-in-one-cert
+          key: tls.crt
+  parameters:
+    usePodIdentity: "false"
+    clientID: 980fd6bd-d343-405c-a52e-79c8418a2d90
+    keyvaultName: my-secure-keyvault-aks
+    tenantId: 604f1a96-cbe8-43f8-abbf-f8eaf5d85730
+    objects: |
+      array:
+        - |
+          objectName: all-in-one-cert
+          objectType: secret
+          objectVersion: ""
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: falco-sa
+  namespace: falco
+  annotations:
+    azure.workload.identity/client-id: "980fd6bd-d343-405c-a52e-79c8418a2d90"
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: falco-cert-refresher
+  namespace: falco
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cert-refresher
+  template:
+    metadata:
+      labels:
+        app: cert-refresher
+    spec:
+      serviceAccountName: falco-sa
+      containers:
+        - name: refresher
+          image: busybox
+          command: ["sleep", "3600"]
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "falco-cert-kv"
+

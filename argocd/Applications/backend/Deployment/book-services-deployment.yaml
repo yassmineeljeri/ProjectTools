@@ -1,0 +1,137 @@
+# Inject istio proxy on all pods in the namespace
+#kubectl get mutatingwebhookconfiguration istio-sidecar-injector-asm-1-23-aks-istio-system -o yaml | grep "namespaceSelector:" -A5
+#kubectl label namespace backend-ns istio.io/rev=asm-1-23 --overwrite
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: book-services-deployment
+  namespace: backend-ns
+
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: book-services
+  template:
+    metadata:
+      labels:
+        app: book-services
+        version: v1
+        logging: otlp-only
+    spec:
+      serviceAccountName: bsn-sa
+      containers:
+        - name: book-services
+          image: yassmineljeri/book-service:v1.1.4
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8050
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: prod
+            - name: SERVICE_NAME
+              value: "book-services"
+            - name: SERVICE_VERSION
+              value: "v1.1.4"
+            - name: ENVIRONMENT
+              value: "production"
+
+            # OPTIMIZED: Single JAVA_TOOL_OPTIONS with OTel agent
+            - name: JAVA_TOOL_OPTIONS
+              value: "-javaagent:/app/opentelemetry-javaagent.jar -Xmx512m -Xms256m -XX:+UseG1GC"
+
+            # MINIMAL OTel Configuration for AI
+            - name: OTEL_SERVICE_NAME
+              value: "book-services"
+            - name: OTEL_SERVICE_VERSION
+              value: "v1.1.4"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.name=book-services,service.version=v1.1.4,deployment.environment=production,k8s.cluster.name=aks-cluster,k8s.namespace.name=backend-ns"
+            # OTLP Exporter
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector-opentelemetry-collector.opentelemetry.svc.cluster.local:4317"
+
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "grpc"
+            - name: OTEL_EXPORTER_OTLP_COMPRESSION
+              value: "gzip"
+
+            # Export all telemetry via OTLP
+            - name: OTEL_LOGS_EXPORTER
+              value: "otlp"
+            - name: OTEL_METRICS_EXPORTER
+              value: "otlp"
+            - name: OTEL_TRACES_EXPORTER
+              value: "otlp"
+
+            - name: OTEL_INSTRUMENTATION_SPRING_WEB_ENABLED
+              value: "true"
+            - name: OTEL_INSTRUMENTATION_SPRING_WEBMVC_ENABLED
+              value: "true"
+            - name: OTEL_INSTRUMENTATION_HTTP_ENABLED
+              value: "true"
+            - name: OTEL_INSTRUMENTATION_JDBC_ENABLED
+              value: "true"
+            - name: OTEL_INSTRUMENTATION_HIBERNATE_ENABLED
+              value: "true"
+            - name: OTEL_INSTRUMENTATION_LOGBACK_APPENDER_ENABLED
+              value: "true"
+            - name: OTEL_INSTRUMENTATION_MICROMETER_ENABLED
+              value: "true"
+
+            # DISABLE unnecessary instrumentation
+            - name: OTEL_INSTRUMENTATION_SPRING_BOOT_ENABLED
+              value: "false"
+            - name: OTEL_INSTRUMENTATION_ANNOTATIONS_ENABLED
+              value: "false"
+
+            # OPTIMIZED: Sampling for production AI monitoring
+            - name: OTEL_TRACES_SAMPLER
+              value: "traceidratio"
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: "1.0"  # 10% sampling for production
+
+
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+          # Health checks
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8050
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8050
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: book-services-svc
+  namespace: backend-ns
+spec:
+  selector:
+    app: book-services
+  ports:
+    - protocol: TCP
+      name: http-book
+      port: 8050
+      targetPort: 8050
+  type: ClusterIP
+---

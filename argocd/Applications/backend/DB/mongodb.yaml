@@ -1,0 +1,153 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-file-pvc
+  namespace: databases
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: managed-csi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mongo-file-secret
+  namespace: databases
+type: Opaque
+stringData:
+  mongo-root-username: root
+  mongo-root-password: supersecurepass
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo-file
+  namespace: databases
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo-file
+  template:
+    metadata:
+      labels:
+        app: mongo-file
+    spec:
+      containers:
+        - name: mongo-file
+          image: mongo:6.0
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: mongo-file-secret
+                  key: mongo-root-username
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongo-file-secret
+                  key: mongo-root-password
+            - name: MONGO_INITDB_DATABASE
+              value: file_database
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - mountPath: /data/db
+              name: mongo-data
+      volumes:
+        - name: mongo-data
+          persistentVolumeClaim:
+            claimName: mongo-file-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-file
+  namespace: databases
+spec:
+  selector:
+    app: mongo-file
+  ports:
+    - protocol: TCP
+      port: 27017
+      targetPort: 27017
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-notifications-pvc
+  namespace: databases
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: managed-csi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mongo-notifications-secret
+  namespace: databases
+type: Opaque
+stringData:
+  mongo-root-username: root
+  mongo-root-password: supersecurepass
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo-notifications
+  namespace: databases
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo-notifications
+  template:
+    metadata:
+      labels:
+        app: mongo-notifications
+    spec:
+      containers:
+        - name: mongo-notifications
+          image: mongo:6.0
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: mongo-notifications-secret
+                  key: mongo-root-username
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongo-notifications-secret
+                  key: mongo-root-password
+            - name: MONGO_INITDB_DATABASE
+              value: notifications_database
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - mountPath: /data/db
+              name: mongo-data
+      volumes:
+        - name: mongo-data
+          persistentVolumeClaim:
+            claimName: mongo-notifications-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-notifications
+  namespace: databases
+spec:
+  selector:
+    app: mongo-notifications
+  ports:
+    - protocol: TCP
+      port: 27017
+      targetPort: 27017

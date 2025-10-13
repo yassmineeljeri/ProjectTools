@@ -1,0 +1,205 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-secret
+  namespace: databases
+type: Opaque
+data:
+  mysql-root-password: bXlzcWxfcGFzc3dvcmQ=   # base64 for: mysql_password
+---
+---
+# 1. PersistentVolumeClaim for books database
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-books-pvc
+  namespace: databases
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: managed-csi
+  resources:
+    requests:
+      storage: 2Gi
+---
+# 2. Deployment for books database
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-books
+  namespace: databases
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql-books
+  template:
+    metadata:
+      labels:
+        app: mysql-books
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: mysql-root-password
+            - name: MYSQL_DATABASE
+              value: books_database
+          ports:
+            - containerPort: 3306
+          volumeMounts:
+            - name: mysql-books-storage
+              mountPath: /var/lib/mysql
+      volumes:
+        - name: mysql-books-storage
+          persistentVolumeClaim:
+            claimName: mysql-books-pvc
+---
+# 3. Service for books database
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-books
+  namespace: databases
+spec:
+  selector:
+    app: mysql-books
+  ports:
+    - protocol: TCP
+      port: 3306
+      targetPort: 3306
+---
+# 4. PVC for transaction database
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-transactions-pvc
+  namespace: databases
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: managed-csi
+  resources:
+    requests:
+      storage: 2Gi
+---
+# 5. Deployment for transaction database
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-transactions
+  namespace: databases
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql-transactions
+  template:
+    metadata:
+      labels:
+        app: mysql-transactions
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: mysql-root-password
+            - name: MYSQL_DATABASE
+              value: book_transaction_database
+          ports:
+            - containerPort: 3306
+          volumeMounts:
+            - name: mysql-transactions-storage
+              mountPath: /var/lib/mysql
+      volumes:
+        - name: mysql-transactions-storage
+          persistentVolumeClaim:
+            claimName: mysql-transactions-pvc
+---
+# 6. Service for transaction database
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-transactions
+  namespace: databases
+spec:
+  selector:
+    app: mysql-transactions
+  ports:
+    - protocol: TCP
+      port: 3306
+      targetPort: 3306
+---
+# 7. PVC for feedbacks database
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-feedbacks-pvc
+  namespace: databases
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: managed-csi
+  resources:
+    requests:
+      storage: 2Gi
+---
+# 8. Deployment for feedbacks database
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-feedbacks
+  namespace: databases
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql-feedbacks
+  template:
+    metadata:
+      labels:
+        app: mysql-feedbacks
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: mysql-root-password
+            - name: MYSQL_DATABASE
+              value: feedbacks_database
+          ports:
+            - containerPort: 3306
+          volumeMounts:
+            - name: mysql-feedbacks-storage
+              mountPath: /var/lib/mysql
+      volumes:
+        - name: mysql-feedbacks-storage
+          persistentVolumeClaim:
+            claimName: mysql-feedbacks-pvc
+---
+# 9. Service for feedbacks database
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-feedbacks
+  namespace: databases
+spec:
+  selector:
+    app: mysql-feedbacks
+  ports:
+    - protocol: TCP
+      port: 3306
+      targetPort: 3306

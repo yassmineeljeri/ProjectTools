@@ -1,0 +1,66 @@
+global:
+  domain: argocd.devops-tool.com
+#
+#createClusterRoles: false
+#createAggregateRoles: false
+configs:
+  cm:
+    timeout.reconciliation: 30s #30s fro dev keep it fast, 5m for prod
+  params:
+    server.insecure: true
+
+controller:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+repoServer:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+server:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 192Mi
+
+dex:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 128Mi
+
+redis:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 128Mi
+
+applicationSet:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 128Mi
+
+notifications:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 128Mi

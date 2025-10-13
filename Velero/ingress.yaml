@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  name: velero-ingress
+  namespace: velero
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: velero.devops-tool.com
+      http:
+        paths:
+          - backend:
+              service:
+                name: velero-ui
+                port:
+                  number: 3000
+            path: /
+            pathType: Prefix
+  tls:
+    - hosts:
+        - velero.devops-tool.com
+      secretName: velero-ingress-tls
