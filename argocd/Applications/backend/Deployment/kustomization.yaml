@@ -24,4 +24,4 @@ images:
   - name: yassmineljeri/security-service
     newTag: v1.1.0
   - name: yassmineljeri/upload-file-service
-    newTag: v1.0.9
+    newTag: v1.1.0
