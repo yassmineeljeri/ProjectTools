@@ -14,7 +14,7 @@ images:
   - name: yassmineljeri/config-service
     newTag: v1.5.1
   - name: yassmineljeri/book-service
-    newTag: v1.1.4
+    newTag: v1.1.5
   - name: yassmineljeri/book-transaction-service
     newTag: v1.0.9
   - name: yassmineljeri/feedback-service
