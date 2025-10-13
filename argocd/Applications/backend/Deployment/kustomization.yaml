@@ -12,7 +12,7 @@ resources:
   - ../DB
 images:
   - name: yassmineljeri/config-service
-    newTag: v1.4.9
+    newTag: v1.5.1
   - name: yassmineljeri/book-service
     newTag: v1.1.4
   - name: yassmineljeri/book-transaction-service
