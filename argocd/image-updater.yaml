@@ -124,7 +124,7 @@ data:
     registries:
     - name: Docker Hub
       prefix: docker.io
-      api_url: https://hub.docker.com/repositories/yassmineljeri
+      api_url: https://registry-1.docker.io
       credentials: env:DR_AUTH
       defaultns: library
       default: true

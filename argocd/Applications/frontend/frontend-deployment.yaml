@@ -1,0 +1,118 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: frontend-ns
+  labels:
+    app: frontend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      serviceAccountName: bsn-sa
+      volumes:
+        - name: nginx-run
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}
+        - name: config-volume
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: frontend-config-spc
+      containers:
+        - name: frontend
+          image: yassmineljeri/bsn-frontend
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: nginx-run
+              mountPath: /var/run
+            - name: config-volume
+              mountPath: /usr/share/nginx/html/assets/config.json
+              subPath: config
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-svc
+  namespace: frontend-ns
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP
+
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: frontend-config-spc
+  namespace: frontend-ns
+spec:
+  provider: azure
+  secretObjects:
+    - secretName: frontend-config-secret
+      type: Opaque
+      data:
+        - objectName: config
+          key: config.json
+  parameters:
+    usePodIdentity: "false"
+    clientID: 980fd6bd-d343-405c-a52e-79c8418a2d90
+    keyvaultName: "my-secure-keyvault-aks"
+    tenantId: 604f1a96-cbe8-43f8-abbf-f8eaf5d85730
+    syncSecret.enabled: "true"
+    objects: |
+      array:
+        - |
+          objectName: config
+          objectType: secret
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend-hpa
+  namespace: frontend-ns
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 120   # wait 2m before increasing
+      policies:
+        - type: Pods
+          value: 1                      # cap growth to +1 pods per minute
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 180   # wait 3m before decreasing (prevents thrash)
+      policies:
+        - type: Pods
+          value: 1                      # shed at most 1 pod per minute (gentle)
+          periodSeconds: 60
+#  utilization = (current usage ÷ resource requests) * 100

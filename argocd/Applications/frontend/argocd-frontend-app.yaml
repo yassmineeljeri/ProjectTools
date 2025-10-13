@@ -1,0 +1,52 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bsn-frontend-app
+  namespace: argocd
+  labels:
+    app.kubernetes.io/managed-by: argocd
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: |
+      frontend=yassmineljeri/bsn-frontend
+    argocd-image-updater.argoproj.io/frontend.update-strategy: semver
+    argocd-image-updater.argoproj.io/frontend.allow-tags: regexp:^v\d+\.\d+\.\d+$
+
+    # restricts allowed image tags to semantic versioning format like v1.2.3
+#^v\d+\.\d+\.\d+$ matches a string that starts (^) with v,
+# followed by one or more digits (\d+), a dot (\.),
+# more digits, another dot, more digits, and ends ($).
+
+    argocd-image-updater.argoproj.io/write-back-method: git
+    argocd-image-updater.argoproj.io/write-back-target: kustomization
+    argocd-image-updater.argoproj.io/git-branch: main
+    argocd-image-updater.argoproj.io/git-path: argocd/Applications/frontend
+    argocd-image-updater.argoproj.io/git-commit-message: "Update image tags in kustomization.yaml"
+spec:
+  project: default
+  source:
+    repoURL: 'https://github.com/yassmineeljeri/ProjectTools.git'
+    targetRevision: main
+    path: argocd/Applications/frontend
+    kustomize: {}
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: frontend-ns
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+      - PruneLast=true
+      - RespectIgnoreDifferences=true
+  revisionHistoryLimit: 20
+
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      namespace: frontend-ns
+      jsonPointers:
+        - /spec/replicas
+      managedFieldsManagers:
+        - horizontal-pod-autoscaler
