@@ -12,16 +12,16 @@ resources:
   - ../DB
 images:
   - name: yassmineljeri/config-service
-    newTag: v1.5.1
+    newTag: v1.5.2
   - name: yassmineljeri/book-service
-    newTag: v1.1.4
+    newTag: v1.1.6
   - name: yassmineljeri/book-transaction-service
-    newTag: v1.0.9
+    newTag: v1.1.0
   - name: yassmineljeri/feedback-service
-    newTag: v1.0.9
+    newTag: v1.1.0
   - name: yassmineljeri/notification-service
-    newTag: v1.0.9
+    newTag: v1.1.0
   - name: yassmineljeri/security-service
-    newTag: v1.0.9
+    newTag: v1.1.0
   - name: yassmineljeri/upload-file-service
-    newTag: v1.0.9
+    newTag: v1.1.0
