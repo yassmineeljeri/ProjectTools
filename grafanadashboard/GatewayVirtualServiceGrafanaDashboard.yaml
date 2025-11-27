@@ -1,0 +1,58 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-grafanadashboard
+  namespace: istio-system
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: grafanadashboard.devops-tool.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: istio-ingress
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - grafanadashboard.devops-tool.com
+      secretName: grafana-ingress-tls
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: grafana-gateway
+  namespace: istio-system
+spec:
+  selector:
+    istio: ingress
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - grafanadashboard.devops-tool.com
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: grafana-vs
+  namespace: istio-system
+spec:
+  hosts:
+    - grafanadashboard.devops-tool.com
+  gateways:
+    - grafana-gateway
+  http:
+    - route:
+        - destination:
+            host: grafana.grafanadashboard.svc.cluster.local
+            port:
+              number: 80

@@ -1,0 +1,129 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: mysql-feedbacks-policy
+  namespace: databases
+spec:
+  endpointSelector:
+    matchLabels:
+      app: mysql-feedbacks
+
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: feedback-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: feedback-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: mysql-books-policy
+  namespace: databases
+spec:
+  endpointSelector:
+    matchLabels:
+      app: mysql-books
+
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: book-services
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: book-services
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: mysql-transactions-policy
+  namespace: databases
+spec:
+  endpointSelector:
+    matchLabels:
+      app: mysql-transactions
+
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: book-transaction-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: book-transaction-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"

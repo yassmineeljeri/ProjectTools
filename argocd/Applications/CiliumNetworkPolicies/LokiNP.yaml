@@ -1,0 +1,64 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: loki-full-policy
+  namespace: loki
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: fluent-bit
+            k8s:io.kubernetes.pod.namespace: fluentbit
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: opentelemetry-collector
+            k8s:io.kubernetes.pod.namespace: opentelemetry
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: ingress-nginx
+            k8s:io.kubernetes.pod.namespace: ingress-nginx
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: loki
+
+  egress:
+
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: loki
+
+
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+

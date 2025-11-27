@@ -9,6 +9,11 @@ config:
   extensions:
     health_check:
       endpoint: "0.0.0.0:13133"
+    basicauth/loki:
+      client_auth:
+        username: loki
+        password: loki
+
   receivers:
     otlp:
       protocols:
@@ -18,38 +23,47 @@ config:
           endpoint: 0.0.0.0:4318
 
   processors:
-    batch: {}
+    # ⬇️ Drop noisy health/readiness/liveness spans
+    filter/drop_health:
+      error_mode: ignore
+      traces:
+        span:
+          - 'attributes["http.target"] != nil and IsMatch(attributes["http.target"], "^/(actuator/)?health(/.*)?$")'
+          - 'attributes["http.route"]  != nil and IsMatch(attributes["http.route"],  "^/(actuator/)?health(/.*)?$")'
+          - 'name != nil and IsMatch(name, "^GET /(actuator/)?health(/.*)?$")'
+          - 'attributes["http.target"] != nil and IsMatch(attributes["http.target"], "^/(livez|readyz)$")'
     memory_limiter:
       check_interval: 5s
       limit_mib: 200
       spike_limit_mib: 20
+    batch: {}
 
   exporters:
-    # Traces -> Jaeger
     otlp/jaeger:
-      endpoint: jaeger-collector.jaeger.svc.cluster.local:14250
+      endpoint: jaeger-collector.jaeger.svc.cluster.local:4317
       tls:
         insecure: true
 
-    # Metrics -> VictoriaMetrics
     otlphttp/vm:
       endpoint: http://vminsert-vmks-victoria-metrics-k8s-stack.victoriametrics.svc.cluster.local:8480/insert/0/opentelemetry
       tls:
         insecure: true
 
-    # Logs -> Loki
     loki:
       endpoint: http://loki-gateway.loki.svc.cluster.local/loki/api/v1/push
       tls:
         insecure: true
+      auth:
+        authenticator: basicauth/loki
       headers:
         X-Scope-OrgID: "foo"
 
   service:
+    extensions: [health_check, basicauth/loki]
     pipelines:
       traces:
         receivers: [otlp]
-        processors: [batch, memory_limiter]
+        processors: [filter/drop_health, memory_limiter, batch]
         exporters: [otlp/jaeger]
 
       metrics:
@@ -62,6 +76,4 @@ config:
         processors: [batch, memory_limiter]
         exporters: [loki]
 
-
-
-#helm upgrade otel-collector open-telemetry/opentelemetry-collector   -n opentelemetry -f opentelemtry-values.yaml
+  # helm upgrade --install otel-collector open-telemetry/opentelemetry-collector   -n opentelemetry -f opentelemtry-values.yaml

@@ -23,7 +23,7 @@ spec:
       serviceAccountName: bsn-sa
       containers:
         - name: book-services
-          image: yassmineljeri/book-service:v1.1.4
+          image: yassmineljeri/book-service
           imagePullPolicy: Always
           ports:
             - containerPort: 8050

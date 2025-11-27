@@ -1,0 +1,54 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: velero-ui-policy
+  namespace: velero
+spec:
+  endpointSelector:
+    matchLabels:
+      io.kubernetes.pod.namespace: velero
+      app.kubernetes.io/name: velero-ui
+
+  ingress:
+
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: ingress-nginx
+            app.kubernetes.io/name: ingress-nginx
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
+
+
+
+  egress:
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+
+
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: velero-server-policy
+  namespace: velero
+spec:
+  endpointSelector:
+    matchLabels:
+      io.kubernetes.pod.namespace: velero
+      app.kubernetes.io/name: velero
+
+
+  egress:
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+

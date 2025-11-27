@@ -12,8 +12,8 @@ resources:
     cpu: 200m
     memory: 200Mi
   requests:
-    cpu: 30m
-    memory: 50Mi
+    cpu: 10m
+    memory: 10Mi
 
 nodeSelector:
   kubernetes.io/os: linux
@@ -210,6 +210,15 @@ config:
         Cache_Use_Docker_Id  On
         Kube_Meta_Cache_TTL  3600
 
+    [FILTER]
+        Name   modify
+        Match  kube.*
+        Condition   Key_Value_Matches  $kubernetes['container_name'] ^ztunnel
+        Add    log_type istio_ambient
+        Add    priority high
+        Add    component ztunnel
+
+
 
     [FILTER]
         Name   modify
@@ -355,10 +364,10 @@ config:
     [OUTPUT]
         Name              loki
         Match             *
-        Host              grafanaloki.devops-tool.com 
-        Port              443
+        Host              loki-gateway.loki.svc.cluster.local 
+        Port              80
         URI               /loki/api/v1/push
-        tls               On
+        tls               Off
         tls.verify        Off
         Header            Content-Type application/json
         Header            Authorization Basic bG9raTpsb2tp 

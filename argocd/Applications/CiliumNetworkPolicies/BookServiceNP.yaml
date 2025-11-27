@@ -1,0 +1,124 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: book-services-policy
+  namespace: backend-ns
+spec:
+  endpointSelector:
+    matchLabels:
+      app: book-services
+
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: istio-ingress
+            io.kubernetes.pod.namespace: istio-system
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+    - fromEndpoints:
+        - matchLabels:
+            app: book-transaction-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+
+    - fromEndpoints:
+        - matchLabels:
+            app: feedback-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+    - fromEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "8050"
+              protocol: TCP
+
+
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: book-transaction-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+    - toEndpoints:
+        - matchLabels:
+            app: security-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+    - toEndpoints:
+        - matchLabels:
+            app: upload-file-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+    - toEndpoints:
+        - matchLabels:
+            app: feedback-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+    - toEndpoints:
+        - matchLabels:
+            app: config-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+    - toEndpoints:
+        - matchLabels:
+            app: mysql-books
+            io.kubernetes.pod.namespace: databases
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: opentelemetry
+            app.kubernetes.io/name: opentelemetry-collector
+      toPorts:
+        - ports:
+            - port: "4317"
+              protocol: TCP
+
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"

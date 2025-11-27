@@ -1,0 +1,80 @@
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: ingress-cert-kv
+  namespace: istio-system
+spec:
+  provider: azure
+  parameters:
+    clientID: 980fd6bd-d343-405c-a52e-79c8418a2d90
+    tenantId: 604f1a96-cbe8-43f8-abbf-f8eaf5d85730
+    keyvaultName: my-secure-keyvault-aks
+    objects: |
+      array:
+        - |
+          objectName: BSNCertificate
+          objectType: secret
+          objectVersion: ""
+        - |
+          objectName: GrafanaLokiCertificate
+          objectType: secret
+          objectVersion: ""
+        - |
+          objectName: GrafanaDashboardCertificate
+          objectType: secret
+          objectVersion: ""
+  secretObjects:
+    - secretName: bsn-ingress-tls
+      type: kubernetes.io/tls
+      data:
+        - objectName: BSNCertificate
+          key: tls.key
+        - objectName: BSNCertificate
+          key: tls.crt
+    - secretName: tls-grafana-loki-kv
+      type: kubernetes.io/tls
+      data:
+        - objectName: GrafanaLokiCertificate
+          key: tls.key
+        - objectName: GrafanaLokiCertificate
+          key: tls.crt
+    - secretName: grafana-ingress-tls
+      type: kubernetes.io/tls
+      data:
+        - objectName: GrafanaDashboardCertificate
+          key: tls.key
+        - objectName: GrafanaDashboardCertificate
+          key: tls.crt
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cert-refresher
+  namespace: istio-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cert-refresher
+  template:
+    metadata:
+      labels:
+        app: cert-refresher
+    spec:
+      serviceAccountName: bsn-sa
+      containers:
+        - name: refresher
+          image: busybox
+          command: ["sleep", "3600"]
+          volumeMounts:
+            - name: secrets-store-inline
+              mountPath: "/mnt/secrets-store"
+              readOnly: true
+      volumes:
+        - name: secrets-store-inline
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "ingress-cert-kv"

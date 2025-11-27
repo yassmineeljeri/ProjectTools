@@ -1,0 +1,91 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: book-transaction-service-policy
+  namespace: backend-ns
+spec:
+  endpointSelector:
+    matchLabels:
+      app: book-transaction-service
+
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: istio-ingress
+            io.kubernetes.pod.namespace: istio-system
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: book-services
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+    - toEndpoints:
+        - matchLabels:
+            app: security-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+    - toEndpoints:
+        - matchLabels:
+            app: kafka
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+    - toEndpoints:
+        - matchLabels:
+            app: mysql-transactions
+            io.kubernetes.pod.namespace: databases
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+
+    - toEndpoints:
+        - matchLabels:
+            app: config-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: opentelemetry
+            app.kubernetes.io/name: opentelemetry-collector
+      toPorts:
+        - ports:
+            - port: "4317"
+              protocol: TCP
+
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+

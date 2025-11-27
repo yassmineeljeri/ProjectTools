@@ -64,30 +64,19 @@ ingester:
     failureThreshold: 3
 
 
+
 collector:
   enabled: true
   service:
-    enabled: true
-    ports:
-      - name: grpc
-        port: 14250
-        targetPort: 14250
-        protocol: TCP
-      - name: http
-        port: 14268
-        targetPort: 14268
-        protocol: TCP
-      - name: otlp-grpc
-        port: 4317
-        targetPort: 4317
-        protocol: TCP
-      - name: otlp-http
+    otlp:
+      http:
+        name: otlp-http
         port: 4318
-        targetPort: 4318
-        protocol: TCP
-  extraArgs:
-    - "--admin-http-port=14269"
-    - "--health-check-http-port=14269"
+      grpc:
+        name: otlp-grpc
+        port: 4317
+
+
   extraEnv:
     - name: SPAN_STORAGE_TYPE
       value: kafka
@@ -95,9 +84,12 @@ collector:
       value: jaeger-kafka:9092
     - name: KAFKA_PRODUCER_TOPIC
       value: jaeger-spans
-    - name: COLLECTOR_OTLP_ENABLED
-      value: "true"
 
+  cmdlineParams:
+    collector.otlp.grpc.host-port: ":4317"
+    collector.otlp.http.host-port: ":4318"
+    collector.zipkin.host-port: ":9411"
+    admin.http.host-port: ":14269"
   ingress:
     enabled: true
     ingressClassName: nginx
@@ -133,6 +125,8 @@ query:
 
 kafka:
   replicaCount: 1
+  image:
+    repository: bitnamilegacy/kafka
   controller:
     replicaCount: 1
     extraConfig: |
@@ -153,6 +147,8 @@ kafka:
 
 elasticsearch:
   enabled: true
+  image:
+    repository: bitnamilegacy/elasticsearch
   master:
     replicaCount: 1
     persistence:
@@ -170,6 +166,10 @@ elasticsearch:
   ingest:
     replicaCount: 0
   sysctlImage:
-    enabled: true
+    repository: bitnamilegacy/os-shell
   volumePermissions:
-    enabled: true
+    image:
+      repository: bitnamilegacy/os-shell
+  metrics:
+    image:
+      repository: bitnamilegacy/elasticsearch-exporter

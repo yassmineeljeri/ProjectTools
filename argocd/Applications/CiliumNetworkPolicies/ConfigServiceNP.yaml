@@ -1,0 +1,117 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: config-service-cnp
+  namespace: backend-ns
+spec:
+  endpointSelector:
+    matchLabels:
+      app: config-service
+  ingress:
+    - fromEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "8888"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app: book-services
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+            - port: "8888"
+              protocol: TCP
+
+    - fromEndpoints:
+        - matchLabels:
+            app: book-transaction-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+            - port: "8888"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app: feedback-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+            - port: "8888"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app: notification-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+            - port: "8888"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app: security-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+            - port: "8888"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app: upload-file-service
+            io.kubernetes.pod.namespace: backend-ns
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+            - port: "8888"
+              protocol: TCP
+  egress:
+    - toFQDNs:
+        - matchName: github.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "80"
+              protocol: TCP
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+
+
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: opentelemetry
+            app.kubernetes.io/name: opentelemetry-collector
+      toPorts:
+        - ports:
+            - port: "4317"
+              protocol: TCP
+
+
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"

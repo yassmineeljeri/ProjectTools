@@ -61,8 +61,11 @@ spec:
 
 ---
 
-adminUser: admin
-adminPassword: admin
+admin:
+  existingSecret: grafana-admin-credentials
+  userKey: GF_SECURITY_ADMIN_USER
+  passwordKey: GF_SECURITY_ADMIN_PASSWORD
+
 
 persistence:
   enabled: true
@@ -119,6 +122,19 @@ dashboardProviders:
         editable: true
         options:
           path: /var/lib/grafana/dashboards/VictoriaMetrics
+
+extraVolumes:
+  - name: grafana-secret-kv
+    csi:
+      driver: secrets-store.csi.k8s.io
+      readOnly: true
+      volumeAttributes:
+        secretProviderClass: grafana-secret-kv
+
+extraVolumeMounts:
+  - name: grafana-secret-kv
+    mountPath: /mnt/secrets-store
+    readOnly: true
 
 
 ---

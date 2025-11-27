@@ -11,13 +11,12 @@ fullnameOverride: ""
 tenant: "0"
 argocdReleaseOverride: ""
 
-# VictoriaMetrics Operator - DISABLED: Will be installed separately
 victoria-metrics-operator:
-  enabled: true  # Disabled - operator installed separately
+  enabled: true
   crds:
     plain: true
     cleanup:
-      enabled: false  # Disable cleanup to avoid conflicts
+      enabled: false
       image:
         repository: bitnami/kubectl
         pullPolicy: IfNotPresent
