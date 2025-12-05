@@ -15,14 +15,27 @@ spec:
         app: book-transaction-service
         version: v1
         logging: otlp-only
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8052"
+        prometheus.io/scheme: "http"
+
     spec:
       serviceAccountName: bsn-sa
       containers:
         - name: book-transaction-service
-          image: yassmineljeri/book-transaction-service:v1.0.9
+          image: yassmineljeri/book-transaction-service
           imagePullPolicy: Always
           ports:
             - containerPort: 8052
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "200Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: prod
@@ -94,3 +107,41 @@ spec:
       port: 8052
       targetPort: 8052
   type: ClusterIP
+
+
+---
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: book-transaction-service-hpa
+  namespace: backend-ns
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: book-transaction-service-deployment
+
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 120   # wait 2m before increasing
+      policies:
+        - type: Pods
+          value: 1                      # cap growth to +1 pods per minute
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 180   # wait 3m before decreasing (prevents thrash)
+      policies:
+        - type: Pods
+          value: 1                      # shed at most 1 pod per minute (gentle)
+          periodSeconds: 60

@@ -10,7 +10,10 @@ storage:
     port: 9200
     scheme: http
     username: "elastic"
-    password: "changeme"
+    usePassword: true
+    existingSecret: "jaegerpassword"
+    existingSecretKey: "JaegerPassword"
+    indexPrefix: "jaeger"
   kafka:
     brokers:
       - jaeger-kafka:9092
@@ -29,24 +32,21 @@ storage:
     extraEnv: []
 
 
-
 ingester:
   enabled: true
   extraEnv:
     - name: SPAN_STORAGE_TYPE
       value: elasticsearch
-    - name: ES_SERVER_URLS
-      value: http://jaeger-elasticsearch:9200
-    - name: ES_USERNAME
-      value: elastic
-    - name: ES_PASSWORD
-      value: changeme
+
     - name: KAFKA_CONSUMER_BROKERS
       value: jaeger-kafka:9092
     - name: KAFKA_CONSUMER_TOPIC
       value: jaeger-spans
     - name: KAFKA_CONSUMER_CONFIG_AUTO_OFFSET_RESET
       value: latest
+    - name: KAFKA_CONSUMER_GROUP_ID
+      value: jaeger-ingester
+
   livenessProbe:
     httpGet:
       path: /
@@ -62,8 +62,15 @@ ingester:
     initialDelaySeconds: 10
     periodSeconds: 10
     failureThreshold: 3
-
-
+  resources:
+    requests:
+      cpu: "10m"
+      memory: "80Mi"
+    limits:
+      cpu: "80m"
+      memory: "100Mi"
+  serviceMonitor:
+    enabled: true
 
 collector:
   enabled: true
@@ -75,8 +82,15 @@ collector:
       grpc:
         name: otlp-grpc
         port: 4317
-
-
+  resources:
+    requests:
+      cpu: "5m"
+      memory: "80Mi"
+    limits:
+      cpu: "50m"
+      memory: "100Mi"
+  serviceMonitor:
+    enabled: true
   extraEnv:
     - name: SPAN_STORAGE_TYPE
       value: kafka
@@ -106,9 +120,33 @@ collector:
 
 agent:
   enabled: true
+  resources:
+    requests:
+      cpu: "4m"
+      memory: "50Mi"
+    limits:
+      cpu: "50m"
+      memory: "80Mi"
+  serviceMonitor:
+    enabled: true
 
 query:
   enabled: true
+  extraEnv:
+    - name: SPAN_STORAGE_TYPE
+      value: elasticsearch
+    - name: METRICS_STORAGE_TYPE
+      value: prometheus
+
+    - name: PROMETHEUS_SERVER_URL
+      value: http://vmselect-vmks-victoria-metrics-k8s-stack.victoriametrics.svc.cluster.local:8481/select/0/prometheus
+
+    # Optional but recommended with recent Otel changes
+    - name: PROMETHEUS_QUERY_NORMALIZE_CALLS
+      value: "true"
+    - name: PROMETHEUS_QUERY_NORMALIZE_DURATION
+      value: "true"
+
   ingress:
     enabled: true
     ingressClassName: nginx
@@ -122,6 +160,17 @@ query:
       - hosts:
           - jaegerdashboard.devops-tool.com
         secretName: jaegerdashboard-ingress-tls
+  resources:
+    requests:
+      cpu: "5m"
+      memory: "80Mi"
+    limits:
+      cpu: "50m"
+      memory: "100Mi"
+  serviceMonitor:
+    enabled: true
+
+
 
 kafka:
   replicaCount: 1
@@ -132,7 +181,13 @@ kafka:
     extraConfig: |
       auto.create.topics.enable=true
       offsets.topic.replication.factor=1
-
+  resources:
+    requests:
+      cpu: "20m"
+      memory: "200Mi"
+    limits:
+      cpu: "80m"
+      memory: "800Mi"
   provisioning:
     enabled: true
   listeners:
@@ -149,6 +204,7 @@ elasticsearch:
   enabled: true
   image:
     repository: bitnamilegacy/elasticsearch
+    tag: "7.17.22"
   master:
     replicaCount: 1
     persistence:
@@ -173,3 +229,48 @@ elasticsearch:
   metrics:
     image:
       repository: bitnamilegacy/elasticsearch-exporter
+      tag: "1.5.0"
+
+
+esIndexCleaner:
+  enabled: true
+
+  # Run once per day at 23:55
+  schedule: "55 23 * * *"
+
+  # Keep only the last 7 days of traces (delete older indices)
+  numberOfDays: 15
+
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
+  # Extra env for the cleaner Python script
+  extraEnv:
+    - name: HOSTNAME
+      value: "http://jaeger-elasticsearch:9200"
+    - name: INDEX_PREFIX
+      value: "jaeger"
+    - name: ES_USERNAME
+      value: "elastic"
+    - name: ES_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: jaegerpassword
+          key: JaegerPassword
+
+spark:
+  enabled: true
+
+  # Run once per day at 01:00 UTC to compute dependencies for the previous day
+  schedule: "0 1 * * *"
+
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
+  resources:
+    requests:
+      cpu: "90m"
+      memory: "500Mi"
+    limits:
+      cpu: "800m"
+      memory: "1Gi"

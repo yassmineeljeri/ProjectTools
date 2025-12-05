@@ -1,88 +1,138 @@
+
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: jaeger-cnp
+  name: jaeger-pods-cnp
   namespace: jaeger
 spec:
-  # All pods in the jaeger namespace
   endpointSelector: {}
-
-  #
-  # INGRESS
-  #
   ingress:
-    # 1) Allow traffic from any pod inside jaeger namespace
     - fromEndpoints:
         - matchLabels:
             io.kubernetes.pod.namespace: jaeger
 
-    # 2) opentelemetry-collector -> jaeger-collector (OTLP 4317)
-    - fromEndpoints:
-        - matchLabels:
-            io.kubernetes.pod.namespace: opentelemetry
-            app.kubernetes.io/name: opentelemetry-collector
-      toPorts:
-        - ports:
-            - port: "4317"   # OTLP gRPC
-              protocol: TCP
-
-    # 3) ingress-nginx -> jaeger-query (UI / API)
-    - fromEndpoints:
-        - matchLabels:
-            io.kubernetes.pod.namespace: ingress-nginx
-            app.kubernetes.io/name: ingress-nginx
-      toPorts:
-        - ports:
-            - port: "16686"  # Jaeger UI (Service jaeger-query)
-              protocol: TCP
-            - port: "80"     # if your jaeger-query Service also exposes port 80
-              protocol: TCP
-
-  #
-  # EGRESS
-  #
   egress:
-    # 4) Jaeger pods -> Kafka (9092)
     - toEndpoints:
         - matchLabels:
             io.kubernetes.pod.namespace: jaeger
-            app.kubernetes.io/name: kafka
-      toPorts:
-        - ports:
-            - port: "9092"
-              protocol: TCP
 
-    # 5) Jaeger pods -> Elasticsearch HTTP (9200)
-    - toEndpoints:
-        - matchLabels:
-            io.kubernetes.pod.namespace: jaeger
-            app.kubernetes.io/name: elasticsearch
-      toPorts:
-        - ports:
-            - port: "9200"
-              protocol: TCP
-
-    # 6) Elasticsearch master <-> data cluster traffic (9300)
-    - toEndpoints:
-        - matchLabels:
-            io.kubernetes.pod.namespace: jaeger
-            app.kubernetes.io/name: elasticsearch
-      toPorts:
-        - ports:
-            - port: "9300"
-              protocol: TCP
-
-    # 7) DNS (kube-dns)
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: kube-system
-            k8s-app: kube-dns
+            k8s:k8s-app: kube-dns
       toPorts:
         - ports:
             - port: "53"
-              protocol: UDP
-            - port: "53"
-              protocol: TCP
+              protocol: ANY
           rules:
             dns:
               - matchPattern: "*"
+
+
+---
+
+
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: jaeger-agent-cnp
+  namespace: jaeger
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/component: agent
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: victoriametrics
+            app.kubernetes.io/name: vmagent
+      toPorts:
+        - ports:
+            - port: "14271"
+              protocol: TCP
+---
+
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: jaeger-collector-cnp
+  namespace: jaeger
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/component: collector
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: victoriametrics
+            app.kubernetes.io/name: vmagent
+      toPorts:
+        - ports:
+            - port: "14269"
+              protocol: TCP
+
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: opentelemetry-collector
+            k8s:io.kubernetes.pod.namespace: opentelemetry
+      toPorts:
+        - ports:
+            - port: "4317"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: jaeger-ingester-cnp
+  namespace: jaeger
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/component: ingester
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: victoriametrics
+            app.kubernetes.io/name: vmagent
+      toPorts:
+        - ports:
+            - port: "14270"
+              protocol: TCP
+
+---
+
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: jaeger-query-cnp
+  namespace: jaeger
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: jaeger
+      app.kubernetes.io/component: query
+      app.kubernetes.io/instance: jaeger
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: victoriametrics
+            app.kubernetes.io/name: vmagent
+      toPorts:
+        - ports:
+            - port: "16687"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: ingress-nginx
+            k8s:io.kubernetes.pod.namespace: ingress-nginx
+
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: vmselect
+            app.kubernetes.io/instance: vmks-victoria-metrics-k8s-stack
+      toPorts:
+        - ports:
+            - port: "8481"
+              protocol: TCP
+---

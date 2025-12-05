@@ -11,12 +11,13 @@ fullnameOverride: ""
 tenant: "0"
 argocdReleaseOverride: ""
 
+# VictoriaMetrics Operator - DISABLED: Will be installed separately
 victoria-metrics-operator:
-  enabled: true
+  enabled: true  # Disabled - operator installed separately
   crds:
     plain: true
     cleanup:
-      enabled: false
+      enabled: false  # Disable cleanup to avoid conflicts
       image:
         repository: bitnami/kubectl
         pullPolicy: IfNotPresent
@@ -26,8 +27,8 @@ victoria-metrics-operator:
     disable_prometheus_converter: false
     resources:
       requests:
-        cpu: "100m"
-        memory: "128Mi"
+        cpu: "50m"
+        memory: "80Mi"
       limits:
         cpu: "500m"
         memory: "512Mi"
@@ -74,33 +75,31 @@ defaultRules:
       annotations: {}
   rules: {}
   groups:
-    # Disable AKS-incompatible components
     etcd:
       create: false
     kubeControllerManager:
       create: false
     kubeScheduler:
       create: false
-    kubeApiserver:
-      create: false
-    kubelet:
-      create: false
-    kubernetesApps:
-      create: false
-    kubernetesSystem:
-      create: false
     kubeApiserverBurnrate:
       create: false
+    kubernetesSystem:
+      create: true
+    kubelet:
+      create: true
+    kubeApiserver:
+      create: true
+    kubernetesApps:
+      create: true
     kubeApiserverAvailability:
       create: true
     kubeApiserverHistogram:
       create: true
     kubeApiserverSlos:
       create: true
-
-    # garder uniquement les règles utiles :
     general:
       create: true
+
     k8sContainerCpuUsageSecondsTotal:
       create: true
     k8sContainerMemoryWorkingSetBytes:
@@ -163,11 +162,11 @@ vmcluster:
                 storage: 20Gi
       resources:
         limits:
-          cpu: "1"
+          cpu: "150m"
           memory: "2Gi"
         requests:
-          cpu: "200m"
-          memory: "512Mi"
+          cpu: "30m"
+          memory: "1Gi"
       extraArgs:
         dedup.minScrapeInterval: "60s"
         search.maxUniqueTimeseries: "200000"
@@ -184,11 +183,11 @@ vmcluster:
                 storage: 5Gi
       resources:
         limits:
-          cpu: "800m"
-          memory: "1Gi"
-        requests:
           cpu: "100m"
-          memory: "256Mi"
+          memory: "700Mi"
+        requests:
+          cpu: "20m"
+          memory: "200Mi"
       extraArgs:
         search.maxQueryDuration: "60s"
         search.maxPointsPerTimeseries: "500000"
@@ -201,11 +200,11 @@ vmcluster:
       replicaCount: 1
       resources:
         limits:
-          cpu: "800m"
-          memory: "1Gi"
-        requests:
           cpu: "100m"
-          memory: "256Mi"
+          memory: "800Mi"
+        requests:
+          cpu: "20m"
+          memory: "400Mi"
       extraArgs:
         maxLabelsPerTimeseries: "60"
         maxLabelValueLen: "300"
@@ -253,7 +252,6 @@ vmcluster:
           hosts:
             - vminsert.devops-tool.com
 
-# VMAlertmanager - Resource optimized - FIXED CONFIGURATION
 alertmanager:
   enabled: true
   labels: {}
@@ -268,11 +266,11 @@ alertmanager:
     routePrefix: /
     resources:
       limits:
-        cpu: "200m"
-        memory: "256Mi"
+        cpu: "25m"
+        memory: "250Mi"
       requests:
-        cpu: "50m"
-        memory: "64Mi"
+        cpu: "5m"
+        memory: "65Mi"
     securityContext:
       runAsUser: 65534
       runAsGroup: 65534
@@ -284,72 +282,76 @@ alertmanager:
           resources:
             requests:
               storage: 2Gi
-
   config:
     global:
       resolve_timeout: 5m
+
+    # Top-level routing configuration for alerts
     route:
       receiver: "slack-default"
-      group_by: ["alertgroup", "cluster", "job", "namespace"]
-      group_wait: 30s
-      group_interval: 5m
-      repeat_interval: 4h
+      group_by: ["alertname", "severity", "namespace", "pod"]
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 1h
+      # Sub-routes for severity-based Slack channels
       routes:
         - matchers:
             - severity="critical"
-          receiver: slack-critical
-          continue: true
-          group_wait: 10s
-          group_interval: 2m
-          repeat_interval: 1h
+          receiver: "slack-critical"
+
         - matchers:
             - severity="warning"
-          receiver: slack-warning
-          group_wait: 30s
-          group_interval: 5m
-          repeat_interval: 2h
-          continue: true
+          receiver: "slack-warning"
+
         - matchers:
             - severity="info"
           receiver: "slack-info"
-          group_wait: 1m
-          group_interval: 10m
-          repeat_interval: 12h
 
+    # Inhibition rules to reduce noise
     inhibit_rules:
-      - target_matchers:
-          - severity=warning
-        source_matchers:
-          - severity=critical
-        equal:
-          - cluster
-          - namespace
-          - alertname
-      - target_matchers:
-          - severity=info
-        source_matchers:
-          - severity=warning
-        equal:
-          - cluster
-          - namespace
-          - alertname
+      - source_matchers:
+          - severity="critical"
+        target_matchers:
+          - severity="warning"
+        equal: ["cluster", "namespace", "alertname"]
 
+      - source_matchers:
+          - severity="warning"
+        target_matchers:
+          - severity="info"
+        equal: ["cluster", "namespace", "alertname"]
+
+    # Receivers define where to send notifications
     receivers:
       - name: "slack-default"
         slack_configs:
-          - channel: "#alerts-default"
+          - api_url: "https://hooks.slack.com/services/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"
             send_resolved: true
-            api_url: "https://hooks.slack.com/services/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"
-            title: >
-              [{{ (index .Alerts 0).Labels.cluster | toUpper }}] ❓ DEFAULT - {{ (index .Alerts 0).Labels.alertname }}
-            text: |
-              *Description:* {{ (index .Alerts 0).Annotations.description }}
-              *Namespace:* {{ (index .Alerts 0).Labels.namespace }}
-              *Pod:* {{ (index .Alerts 0).Labels.pod }}
-              *Node:* {{ (index .Alerts 0).Labels.node }}
+            title: "{{ if eq .Status \"firing\" }}[FIRING]{{ else }}[RESOLVED]{{ end }} {{ .CommonLabels.alertname }}"
+            text: ""
+            color: '{{ if eq .Status "firing" }}#FFA500{{ else }}#36A64F{{ end }}'
+            fields:
+              - title: "Alert"
+                value: "{{ .CommonLabels.alertname }}"
+                short: true
+              - title: "Severity"
+                value: "{{ .CommonLabels.severity }}"
+                short: true
+              - title: "Cluster"
+                value: "{{ .CommonLabels.cluster }}"
+                short: true
+              - title: "Namespace"
+                value: "{{ .CommonLabels.namespace }}"
+                short: true
+              - title: "Pod"
+                value: "{{ .CommonLabels.pod }}"
+                short: false
+              - title: "Description"
+                value: "{{ (index .Alerts 0).Annotations.description }}"
+                short: false
             actions:
               - type: button
-                text: "Runbook 📗"
+                text: "Runbook 📖"
                 url: "{{ (index .Alerts 0).Annotations.runbook_url }}"
               - type: button
                 text: "Query 🔍"
@@ -359,23 +361,38 @@ alertmanager:
                 url: "{{ (index .Alerts 0).Annotations.dashboard }}"
               - type: button
                 text: "Silence 🔕"
-                url: '{{ template "__alert_silence_link" . }}'
+                url: "{{ .ExternalURL }}/#/alerts?silenced"
+
 
       - name: "slack-critical"
         slack_configs:
-          - channel: "#alerts-critical"
+          - api_url: "https://hooks.slack.com/services/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"
             send_resolved: true
-            api_url: "https://hooks.slack.com/services/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"
-            title: >
-              [{{ (index .Alerts 0).Labels.cluster | toUpper }}] 🔥 CRITICAL - {{ (index .Alerts 0).Labels.alertname }}
-            text: |
-              *Description:* {{ (index .Alerts 0).Annotations.description }}
-              *Namespace:* {{ (index .Alerts 0).Labels.namespace }}
-              *Pod:* {{ (index .Alerts 0).Labels.pod }}
-              *Node:* {{ (index .Alerts 0).Labels.node }}
+            title: "{{ if eq .Status \"firing\" }}[FIRING]{{ else }}[RESOLVED]{{ end }} 🚨 {{ .CommonLabels.alertname }}"
+            text: ""
+            color: '{{ if eq .Status "firing" }}#FF0000{{ else }}#36A64F{{ end }}'
+            fields:
+              - title: "Alert"
+                value: "{{ .CommonLabels.alertname }}"
+                short: true
+              - title: "Severity"
+                value: "{{ .CommonLabels.severity }}"
+                short: true
+              - title: "Cluster"
+                value: "{{ .CommonLabels.cluster }}"
+                short: true
+              - title: "Namespace"
+                value: "{{ .CommonLabels.namespace }}"
+                short: true
+              - title: "Pod"
+                value: "{{ .CommonLabels.pod }}"
+                short: false
+              - title: "Description"
+                value: "{{ (index .Alerts 0).Annotations.description }}"
+                short: false
             actions:
               - type: button
-                text: "Runbook 📗"
+                text: "Runbook 📖"
                 url: "{{ (index .Alerts 0).Annotations.runbook_url }}"
               - type: button
                 text: "Query 🔍"
@@ -385,23 +402,38 @@ alertmanager:
                 url: "{{ (index .Alerts 0).Annotations.dashboard }}"
               - type: button
                 text: "Silence 🔕"
-                url: '{{ template "__alert_silence_link" . }}'
+                url: "{{ .ExternalURL }}/#/alerts?silenced"
 
       - name: "slack-warning"
         slack_configs:
-          - channel: "#alerts-warning"
+          - api_url: "https://hooks.slack.com/services/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"
             send_resolved: true
-            api_url: "https://hooks.slack.com/services/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"
-            title: >
-              [{{ (index .Alerts 0).Labels.cluster | toUpper }}] ⚠️ WARNING - {{ (index .Alerts 0).Labels.alertname }}
-            text: |
-              *Description:* {{ (index .Alerts 0).Annotations.description }}
-              *Namespace:* {{ (index .Alerts 0).Labels.namespace }}
-              *Pod:* {{ (index .Alerts 0).Labels.pod }}
-              *Node:* {{ (index .Alerts 0).Labels.node }}
+            title: "{{ if eq .Status \"firing\" }}[FIRING]{{ else }}[RESOLVED]{{ end }} ⚠️ {{ .CommonLabels.alertname }}"
+            text: ""
+            color: '{{ if eq .Status "firing" }}#FFA400{{ else }}#36A64F{{ end }}'
+            fields:
+              - title: "Alert"
+                value: "{{ .CommonLabels.alertname }}"
+                short: true
+              - title: "Severity"
+                value: "{{ .CommonLabels.severity }}"
+                short: true
+              - title: "Cluster"
+                value: "{{ .CommonLabels.cluster }}"
+                short: true
+              - title: "Namespace"
+                value: "{{ .CommonLabels.namespace }}"
+                short: true
+              - title: "Pod"
+                value: "{{ .CommonLabels.pod }}"
+                short: false
+              - title: "Description"
+                value: "{{ (index .Alerts 0).Annotations.description }}"
+                short: false
+
             actions:
               - type: button
-                text: "Runbook 📗"
+                text: "Runbook 📖"
                 url: "{{ (index .Alerts 0).Annotations.runbook_url }}"
               - type: button
                 text: "Query 🔍"
@@ -411,23 +443,37 @@ alertmanager:
                 url: "{{ (index .Alerts 0).Annotations.dashboard }}"
               - type: button
                 text: "Silence 🔕"
-                url: '{{ template "__alert_silence_link" . }}'
+                url: "{{ .ExternalURL }}/#/alerts?silenced"
 
       - name: "slack-info"
         slack_configs:
-          - channel: "#alerts-info"
+          - api_url: "https://hooks.slack.com/services/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"
             send_resolved: true
-            api_url: "https://hooks.slack.com/services/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"
-            title: >
-              [{{ (index .Alerts 0).Labels.cluster | toUpper }}] ℹ️ INFO - {{ (index .Alerts 0).Labels.alertname }}
-            text: |
-              *Description:* {{ (index .Alerts 0).Annotations.description }}
-              *Namespace:* {{ (index .Alerts 0).Labels.namespace }}
-              *Pod:* {{ (index .Alerts 0).Labels.pod }}
-              *Node:* {{ (index .Alerts 0).Labels.node }}
+            title: "{{ if eq .Status \"firing\" }}[FIRING]{{ else }}[RESOLVED]{{ end }} ℹ️ {{ .CommonLabels.alertname }}"
+            text: ""
+            color: '{{ if eq .Status "firing" }}#0099ff{{ else }}#36A64F{{ end }}'
+            fields:
+              - title: "Alert"
+                value: "{{ .CommonLabels.alertname }}"
+                short: true
+              - title: "Severity"
+                value: "{{ .CommonLabels.severity }}"
+                short: true
+              - title: "Cluster"
+                value: "{{ .CommonLabels.cluster }}"
+                short: true
+              - title: "Namespace"
+                value: "{{ .CommonLabels.namespace }}"
+                short: true
+              - title: "Pod"
+                value: "{{ .CommonLabels.pod }}"
+                short: false
+              - title: "Description"
+                value: "{{ (index .Alerts 0).Annotations.description }}"
+                short: false
             actions:
               - type: button
-                text: "Runbook 📗"
+                text: "Runbook 📖"
                 url: "{{ (index .Alerts 0).Annotations.runbook_url }}"
               - type: button
                 text: "Query 🔍"
@@ -437,8 +483,7 @@ alertmanager:
                 url: "{{ (index .Alerts 0).Annotations.dashboard }}"
               - type: button
                 text: "Silence 🔕"
-                url: '{{ template "__alert_silence_link" . }}'
-
+                url: "{{ .ExternalURL }}/#/alerts?silenced"
 
   monzoTemplate:
     enabled: true
@@ -473,11 +518,11 @@ vmalert:
     replicaCount: 1
     resources:
       limits:
-        cpu: "500m"
+        cpu: "50m"
         memory: "512Mi"
       requests:
-        cpu: "100m"
-        memory: "128Mi"
+        cpu: "10m"
+        memory: "100Mi"
     extraArgs:
       http.pathPrefix: "/"
       remoteWrite.maxQueueSize: "50000"
@@ -611,11 +656,11 @@ prometheus-node-exporter:
     - --collector.filesystem.ignored-fs-types=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|erofs|sysfs|tracefs)$
   resources:
     limits:
-      cpu: "100m"
-      memory: "128Mi"
+      cpu: "70m"
+      memory: "120Mi"
     requests:
-      cpu: "25m"
-      memory: "32Mi"
+      cpu: "10m"
+      memory: "50Mi"
   vmScrape:
     enabled: true
     spec:
@@ -638,11 +683,11 @@ kube-state-metrics:
   enabled: true
   resources:
     limits:
-      cpu: "200m"
+      cpu: "50m"
       memory: "256Mi"
     requests:
-      cpu: "50m"
-      memory: "64Mi"
+      cpu: "10m"
+      memory: "100Mi"
   vmScrape:
     enabled: true
     spec:
@@ -680,11 +725,11 @@ vmagent:
     replicaCount: 1
     resources:
       limits:
-        cpu: "1"
-        memory: "1Gi"
+        cpu: "150m"
+        memory: "800Mi"
       requests:
-        cpu: "200m"
-        memory: "256Mi"
+        cpu: "30m"
+        memory: "160Mi"
     externalLabels:
       cluster: "aks-cluster"
     extraArgs:

@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: anomaly-detector
+  namespace: anomaly-detection
+  labels:
+    app: anomaly-detector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: anomaly-detection
+  template:
+    metadata:
+      labels:
+        app: anomaly-detection
+    spec:
+      serviceAccountName: anomaly-sa
+      containers:
+        - name: anomaly-detection
+          image: yassmineljeri/anomaly-detector:v5
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+          env:
+            - name: MODEL_PATH
+              value: "/app/rf_model.pkl"
+            - name: SCALER_PATH
+              value: "/app/robust_scaler.pkl"
+            - name: LOKI_URL
+              value: "https://grafanaloki.devops-tool.com/loki/api/v1/query_range"
+          envFrom:
+            - secretRef:
+                name: anomaly-detector-secrets
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          volumeMounts:
+            - name: secrets-store-inline
+              mountPath: "/mnt/secrets-store"
+              readOnly: true
+      volumes:
+        - name: secrets-store-inline
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "anomaly-detector-akv"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: anomaly-detection
+  namespace: anomaly-detection
+spec:
+  selector:
+    app: anomaly-detection
+  ports:
+    - port: 80
+      targetPort: 5000
+      protocol: TCP

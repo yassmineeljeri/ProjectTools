@@ -5,7 +5,7 @@ global:
 #createAggregateRoles: false
 configs:
   cm:
-    timeout.reconciliation: 30s #30s fro dev keep it fast, 5m for prod
+    timeout.reconciliation: 30s #30s for dev keep it fast, 5m for prod
   params:
     server.insecure: true
 

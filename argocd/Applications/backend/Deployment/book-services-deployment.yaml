@@ -7,7 +7,6 @@ kind: Deployment
 metadata:
   name: book-services-deployment
   namespace: backend-ns
-
 spec:
   replicas: 1
   selector:
@@ -19,6 +18,12 @@ spec:
         app: book-services
         version: v1
         logging: otlp-only
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8050"
+        prometheus.io/scheme: "http"
+
     spec:
       serviceAccountName: bsn-sa
       containers:
@@ -27,6 +32,14 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8050
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "200Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: prod
@@ -44,8 +57,6 @@ spec:
             # MINIMAL OTel Configuration for AI
             - name: OTEL_SERVICE_NAME
               value: "book-services"
-            - name: OTEL_SERVICE_VERSION
-              value: "v1.1.4"
             - name: OTEL_RESOURCE_ATTRIBUTES
               value: "service.name=book-services,service.version=v1.1.4,deployment.environment=production,k8s.cluster.name=aks-cluster,k8s.namespace.name=backend-ns"
             # OTLP Exporter
@@ -60,61 +71,44 @@ spec:
             # Export all telemetry via OTLP
             - name: OTEL_LOGS_EXPORTER
               value: "otlp"
-            - name: OTEL_METRICS_EXPORTER
-              value: "otlp"
-            - name: OTEL_TRACES_EXPORTER
-              value: "otlp"
-
-            - name: OTEL_INSTRUMENTATION_SPRING_WEB_ENABLED
-              value: "true"
-            - name: OTEL_INSTRUMENTATION_SPRING_WEBMVC_ENABLED
-              value: "true"
-            - name: OTEL_INSTRUMENTATION_HTTP_ENABLED
-              value: "true"
-            - name: OTEL_INSTRUMENTATION_JDBC_ENABLED
-              value: "true"
-            - name: OTEL_INSTRUMENTATION_HIBERNATE_ENABLED
-              value: "true"
             - name: OTEL_INSTRUMENTATION_LOGBACK_APPENDER_ENABLED
               value: "true"
+
+            - name: OTEL_METRICS_EXPORTER
+              value: "otlp"
             - name: OTEL_INSTRUMENTATION_MICROMETER_ENABLED
               value: "true"
 
-            # DISABLE unnecessary instrumentation
-            - name: OTEL_INSTRUMENTATION_SPRING_BOOT_ENABLED
-              value: "false"
-            - name: OTEL_INSTRUMENTATION_ANNOTATIONS_ENABLED
-              value: "false"
-
-            # OPTIMIZED: Sampling for production AI monitoring
             - name: OTEL_TRACES_SAMPLER
               value: "traceidratio"
             - name: OTEL_TRACES_SAMPLER_ARG
               value: "1.0"  # 10% sampling for production
 
+            - name: OTEL_TRACES_EXPORTER
+              value: "otlp"
+#
+#            - name: OTEL_INSTRUMENTATION_SPRING_WEB_ENABLED
+#              value: "true"
+#            - name: OTEL_INSTRUMENTATION_SPRING_WEBMVC_ENABLED
+#              value: "true"
+#            - name: OTEL_INSTRUMENTATION_HTTP_ENABLED
+#              value: "true"
+#            - name: OTEL_INSTRUMENTATION_JDBC_ENABLED
+#              value: "true"
+#            - name: OTEL_INSTRUMENTATION_HIBERNATE_ENABLED
+#              value: "true"
+#            - name: OTEL_INSTRUMENTATION_MICROMETER_ENABLED
+#              value: "true"
+#
+#            # DISABLE unnecessary instrumentation
+#            - name: OTEL_INSTRUMENTATION_SPRING_BOOT_ENABLED
+#              value: "false"
+#            - name: OTEL_INSTRUMENTATION_ANNOTATIONS_ENABLED
+#              value: "false"
 
           volumeMounts:
             - name: tmp
               mountPath: /tmp
-
-          # Health checks
-          livenessProbe:
-            httpGet:
-              path: /actuator/health/liveness
-              port: 8050
-            initialDelaySeconds: 60
-            periodSeconds: 30
-            timeoutSeconds: 5
-            failureThreshold: 3
-
-          readinessProbe:
-            httpGet:
-              path: /actuator/health/readiness
-              port: 8050
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
 
       volumes:
         - name: tmp
@@ -135,3 +129,39 @@ spec:
       targetPort: 8050
   type: ClusterIP
 ---
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: book-services-hpa
+  namespace: backend-ns
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: book-services-deployment
+
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 120   # wait 2m before increasing
+      policies:
+        - type: Pods
+          value: 1                      # cap growth to +1 pods per minute
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 180   # wait 3m before decreasing (prevents thrash)
+      policies:
+        - type: Pods
+          value: 1                      # shed at most 1 pod per minute (gentle)
+          periodSeconds: 60
+#  utilization = (current usage ÷ resource requests) * 100

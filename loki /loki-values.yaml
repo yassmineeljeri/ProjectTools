@@ -49,8 +49,6 @@ loki:
   querier:
     max_concurrent: 4
 
-
-
   storage:
     type: azure
     bucketNames:
@@ -77,21 +75,37 @@ ingester:
     enabled: false
   podLabels:
     cilium.io/component: ingester
-
+  resources:
+    requests:
+      cpu: "20m"
+      memory: "200Mi"
+    limits:
+      cpu: "80m"
+      memory: "800Mi"
 
 querier:
   replicas: 1
-  maxUnavailable: 1
   podLabels:
     cilium.io/component: querier
-
+  resources:
+    requests:
+      cpu: "20m"
+      memory: "200Mi"
+    limits:
+      cpu: "80m"
+      memory: "800Mi"
 
 queryFrontend:
   replicas: 1
-  maxUnavailable: 1
   podLabels:
     cilium.io/component: query-frontend
-
+  resources:
+    requests:
+      cpu: "20m"
+      memory: "200Mi"
+    limits:
+      cpu: "80m"
+      memory: "800Mi"
 
 queryScheduler:
   replicas: 1
@@ -101,10 +115,15 @@ queryScheduler:
 
 distributor:
   replicas: 1
-  maxUnavailable: 1
   podLabels:
     cilium.io/component: distributor
-
+  resources:
+    requests:
+      cpu: "20m"
+      memory: "200Mi"
+    limits:
+      cpu: "80m"
+      memory: "800Mi"
 
 compactor:
   replicas: 1
@@ -114,14 +133,12 @@ compactor:
 
 indexGateway:
   replicas: 1
-  maxUnavailable: 1
   podLabels:
     cilium.io/component: index-gateway
 
 
 ruler:
   replicas: 1
-  maxUnavailable: 1
   podLabels:
     cilium.io/component: ruler
 
@@ -133,7 +150,13 @@ gateway:
       app.kubernetes.io/component: gateway
   podLabels:
     cilium.io/component: gateway
-
+  resources:
+    requests:
+      cpu: "10m"
+      memory: "80Mi"
+    limits:
+      cpu: "80m"
+      memory: "500Mi"
   basicAuth:
     enabled: true
     existingSecret: loki-basic-auth
@@ -195,20 +218,19 @@ chunksCache:
   allocatedMemory: 3000
   resources:
     requests:
-      cpu: "50"
-      memory: "3Gi"
+      cpu: "50m"
+      memory: "500Mi"
     limits:
       cpu: "500m"
-      memory: "4Gi"
+      memory: "2Gi"
 
 resultsCache:
   enabled: true
   allocatedMemory: 512
   resources:
     requests:
-      cpu: "20"
+      cpu: "20m"
       memory: "512Mi"
     limits:
       cpu: "200m"
       memory: "1Gi"
-

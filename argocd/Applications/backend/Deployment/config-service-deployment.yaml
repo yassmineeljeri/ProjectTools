@@ -15,14 +15,27 @@ spec:
         app: config-service
         version: v1
         logging: otlp-only
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8050"
+        prometheus.io/scheme: "http"
     spec:
       serviceAccountName: bsn-sa
       containers:
         - name: config-service
-          image: yassmineljeri/config-service:v1.4.9
+          image: yassmineljeri/config-service
           imagePullPolicy: Always
           ports:
             - containerPort: 8888
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "200Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+
           volumeMounts:
             - name: secrets-store-inline
               mountPath: "/mnt/secrets-store"
@@ -154,3 +167,6 @@ metadata:
   namespace: backend-ns
   annotations:
     azure.workload.identity/client-id: 980fd6bd-d343-405c-a52e-79c8418a2d90
+
+---
+

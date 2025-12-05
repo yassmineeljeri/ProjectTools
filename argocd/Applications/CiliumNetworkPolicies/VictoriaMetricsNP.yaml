@@ -1,69 +1,84 @@
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: victoriametrics-cnp
+  name: victoriametrics-vmalertmanager-cnp
   namespace: victoriametrics
 spec:
-  # Tous les pods du namespace victoriametrics
-  endpointSelector: {}
-  # INGRESS
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: vmalertmanager
   ingress:
     - fromEndpoints:
         - matchLabels:
-            io.kubernetes.pod.namespace: victoriametrics
-
-    - fromEndpoints:
-        - matchLabels:
-            io.kubernetes.pod.namespace: opentelemetry
-            app.kubernetes.io/name: opentelemetry-collector
-      toPorts:
-        - ports:
-            - port: "8480"
-              protocol: TCP
-
-    - fromEndpoints:
-        - matchLabels:
-            io.kubernetes.pod.namespace: ingress-nginx
             app.kubernetes.io/name: ingress-nginx
+            k8s:io.kubernetes.pod.namespace: ingress-nginx
       toPorts:
         - ports:
-            - port: "8481"
-              protocol: TCP
             - port: "9093"
               protocol: TCP
-  # EGRESS
   egress:
-    - toEndpoints:
-        - matchLabels:
-            io.kubernetes.pod.namespace: victoriametrics
-
-    - toEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: kube-system
-            k8s-app: kube-dns
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: UDP
-            - port: "53"
-              protocol: TCP
-          rules:
-            dns:
-              - matchPattern: "*"
-
-    - toEntities:
-        - kube-apiserver
+    - toFQDNs:
+        - matchName: hooks.slack.com
       toPorts:
         - ports:
             - port: "443"
               protocol: TCP
-
     - toEntities:
         - world
       toPorts:
         - ports:
             - port: "443"
               protocol: TCP
+
+---
+
+
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: victoriametrics-vmselect-cnp
+  namespace: victoriametrics
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: vmselect
+      app.kubernetes.io/instance: vmks-victoria-metrics-k8s-stack
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: ingress-nginx
+            k8s:io.kubernetes.pod.namespace: ingress-nginx
+      toPorts:
+        - ports:
+            - port: "8481"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: jaeger
+            app.kubernetes.io/component: query
+            app.kubernetes.io/instance: jaeger
+      toPorts:
+        - ports:
+            - port: "8481"
+              protocol: TCP
+---
+
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: victoriametrics-pods-cnp
+  namespace: victoriametrics
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: victoriametrics
+
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: victoriametrics
 
     - toEndpoints:
         - matchLabels:
@@ -74,8 +89,19 @@ spec:
             - port: "2020"
               protocol: TCP
 
----
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
 
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+
+---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -96,12 +122,46 @@ spec:
               protocol: TCP
 
     - toEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: kube-system
-            k8s-app: kube-dns
+        - matchExpressions:
+            - key: k8s:io.kubernetes.pod.namespace
+              operator: In
+              values:
+                - jaeger
+            - key: app.kubernetes.io/component
+              operator: In
+              values:
+                - agent
+                - collector
+                - ingester
+                - query
+    - toEntities:
+        - world
       toPorts:
         - ports:
-            - port: "9153"
+            - port: "443"
+              protocol: TCP
+
+
+---
+
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: vminsert-allow-otlp
+  namespace: victoriametrics
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: vminsert
+
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: opentelemetry-collector
+            k8s:io.kubernetes.pod.namespace: opentelemetry
+      toPorts:
+        - ports:
+            - port: "8480"
               protocol: TCP
 ---
 apiVersion: cilium.io/v2
@@ -122,3 +182,4 @@ spec:
         - ports:
             - port: "9443"
               protocol: TCP
+
