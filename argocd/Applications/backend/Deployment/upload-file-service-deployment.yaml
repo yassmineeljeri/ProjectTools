@@ -31,10 +31,10 @@ spec:
             - containerPort: 8054
           resources:
             requests:
-              cpu: "100m"
-              memory: "200Mi"
+              cpu: "30m"
+              memory: "600Mi"
             limits:
-              cpu: "1"
+              cpu: "300m"
               memory: "1Gi"
           env:
             - name: SERVICE_VERSION
@@ -130,6 +130,12 @@ spec:
         target:
           type: Utilization
           averageUtilization: 75
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
 
   behavior:
     scaleUp:
