@@ -6,7 +6,7 @@ metadata:
   labels:
     app: frontend
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: frontend
@@ -14,6 +14,11 @@ spec:
     metadata:
       labels:
         app: frontend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8080"
+        prometheus.io/scheme: "http"
     spec:
       serviceAccountName: bsn-sa
       volumes:
@@ -41,6 +46,13 @@ spec:
               mountPath: /var/cache/nginx
           ports:
             - containerPort: 8080
+          resources:
+            requests:
+              cpu: "30m"
+              memory: "600Mi"
+            limits:
+              cpu: "300m"
+              memory: "1Gi"
 ---
 apiVersion: v1
 kind: Service
@@ -92,7 +104,7 @@ spec:
     kind: Deployment
     name: frontend
 
-  minReplicas: 3
+  minReplicas: 1
   maxReplicas: 10
   metrics:
     - type: Resource
@@ -101,6 +113,12 @@ spec:
         target:
           type: Utilization
           averageUtilization: 75
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
 
   behavior:
     scaleUp:
