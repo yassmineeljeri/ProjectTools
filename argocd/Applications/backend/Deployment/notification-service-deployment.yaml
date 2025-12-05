@@ -125,7 +125,7 @@ spec:
     kind: Deployment
     name: notification-service-deployment
 
-  minReplicas: 2
+  minReplicas: 1
   maxReplicas: 10
   metrics:
     - type: Resource
