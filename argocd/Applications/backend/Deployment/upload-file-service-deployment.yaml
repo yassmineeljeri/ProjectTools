@@ -32,10 +32,10 @@ spec:
           resources:
             requests:
               cpu: "30m"
-              memory: "600Mi"
+              memory: "900Mi"
             limits:
               cpu: "300m"
-              memory: "1Gi"
+              memory: "1.5Gi"
           env:
             - name: SERVICE_VERSION
               value: "v1.0.9"
