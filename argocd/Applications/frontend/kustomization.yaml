@@ -5,4 +5,4 @@ resources:
   - serviceaccount.yaml
 images:
   - name: yassmineljeri/bsn-frontend
-    newTag: v1.0.0
+    newTag: v1.0.4
